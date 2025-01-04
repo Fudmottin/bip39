@@ -67,14 +67,14 @@ Example usage:
 The `english-seeds.txt` file contains the official BIP-39 English wordlist (2048 words).  
 For multilingual support, download and use additional BIP-39-compatible wordlists (e.g., Spanish, French).
 You may find them at [bip-0039](https://github.com/bitcoin/bips/tree/master/bip-0039). Simply download
-your preferred language file and use that.
+your preferred language file and use that. I've included the bips as a submodule for convenience.
 
 ### Adding Additional Wordlists
 
 To use a different language, provide the corresponding wordlist file as the first argument:
 
 ```bash
-./seeds spanish-seeds.txt 24
+./seeds spanish.txt 24
 ```
 
 Ensure that the wordlist complies with BIP-39 to maintain compatibility with wallets.
