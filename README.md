@@ -21,8 +21,8 @@ It uses high-quality random sources and supports customizable wordlist files.
 ### Clone the Repository
 
 ```bash
-git clone <repository-url>
-cd <repository-directory>
+git clone https://github.com/Fudmottin/bip39
+cd bip39
 ```
 
 ### Configure and Build
