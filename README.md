@@ -1,6 +1,6 @@
 # Seed Phrase Generator
 
-This is a C++20 command-line tool for generating BIP-39-compatible seed phrases for cryptocurrency wallets.  
+This is a C++20 command-line tool for generating BIP-39-compatible seed phrases for bitcoin wallets.  
 It uses high-quality random sources and supports customizable wordlist files.
 
 ## Features
@@ -48,18 +48,16 @@ cd bip39
 ### Run the Program
 
 ```bash
-./seeds <wordlist-file> <number-of-words> [optional-password]
+./seeds <wordlist-file> <number-of-words>
 ```
 
 - `<wordlist-file>`: Path to the BIP-39 wordlist (e.g., `english-seeds.txt`).
 - `<number-of-words>`: Number of words in the seed phrase (e.g., 12, 24).
-- `[optional-password]`: Optional passphrase for added wallet security.
 
 Example usage:
 
 ```bash
 ./seeds english-seeds.txt 12
-./seeds english-seeds.txt 24 my_passphrase
 ```
 
 ## Wordlist Files
