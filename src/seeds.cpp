@@ -134,9 +134,9 @@ int main(int argc, char* argv[]) {
     gen.seed(seed);
 
     // Create and shuffle range
-    std::vector<int> range(words.size());
-    std::iota(range.begin(), range.end(), 0);
-    std::shuffle(range.begin(), range.end(), gen);
+    std::uniform_int_distribution<> dist(0, words.size() - 1);
+    std::vector<int> range(count);
+    std::generate(range.begin(), range.end(), [&]() { return dist(gen); });
 
     // Loop to produce words
     int j = 1;
