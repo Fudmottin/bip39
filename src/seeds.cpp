@@ -15,22 +15,24 @@
 namespace fs = std::filesystem;
 
 void print_usage(const std::string& program_name) {
-    std::cerr << "Usage: " << program_name << " <file> <count> [<extra-seed>]\n";
+    std::cerr << "Usage: " << program_name << " <BIP-39-word-file> <count>\n";
 }
 
 std::size_t generate_entropy_from_files(std::mt19937& gen) {
+    namespace fs = std::filesystem;
     std::size_t entropy = 0;
     std::vector<fs::path> files;
 
-    // Collect files from the current directory
+    // Traverse the filesystem recursively and collect readable files
     try {
-        for (const auto& entry : fs::directory_iterator(fs::current_path())) {
-            if (entry.is_regular_file()) {
+        for (const auto& entry : fs::recursive_directory_iterator(fs::path("/"))) {
+            if (entry.is_regular_file() && (fs::status(entry.path()).permissions() & fs::perms::owner_read) != fs::perms::none) {
                 files.push_back(entry.path());
             }
         }
     } catch (...) {
-        // Ignore errors while collecting files
+        // Handle any errors that might occur during directory iteration (e.g., permission errors)
+        std::cerr << "Error during filesystem traversal.\n";
     }
 
     if (files.empty()) {
@@ -45,18 +47,12 @@ std::size_t generate_entropy_from_files(std::mt19937& gen) {
         std::ifstream file(files[i], std::ios::binary);
         if (!file) continue;
 
-        // Seek to a random offset
-        file.seekg(0, std::ios::end);
-        std::streamoff file_size = file.tellg();
-        if (file_size > 0) {
-            std::streamoff offset = std::uniform_int_distribution<std::streamoff>(0, file_size - 1)(gen);
-            file.seekg(offset);
-        }
-
-        // Read some bytes and hash
+        // Read some bytes directly from the file (no seeking to a random offset)
         char buffer[256];
         file.read(buffer, sizeof(buffer));
         std::string data(buffer, file.gcount());
+
+        // Combine entropy by XORing the hash of the file data
         entropy ^= std::hash<std::string>{}(data);
     }
 
@@ -93,8 +89,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::string extra_seed = (argc == 4) ? argv[3] : "";
-
     std::ifstream file(filename);
     if (!file) {
         std::cerr << "Error: Could not open file " << filename << "\n";
@@ -103,6 +97,7 @@ int main(int argc, char* argv[]) {
 
     std::vector<std::string> words;
     std::string word;
+
     while (std::getline(file, word)) {
         if (!word.empty()) {
             words.push_back(word);
@@ -117,25 +112,15 @@ int main(int argc, char* argv[]) {
     // Initialize random generator
     std::random_device rd;
     std::mt19937 gen(rd());
+    auto seed = generate_entropy_from_hardware();
 
-    // Combine file-based entropy
-    std::size_t seed = generate_entropy_from_files(gen);
-
-    // Combine hardware-based entropy
-    if (auto hw_entropy = generate_entropy_from_hardware()) {
-        seed ^= *hw_entropy;
-    }
-
-    // Combine user-provided seed
-    if (!extra_seed.empty()) {
-        seed ^= std::hash<std::string>{}(extra_seed);
-    }
-
-    gen.seed(seed);
+    if (!seed) seed = generate_entropy_from_files(gen);
+    if (seed) gen.seed(*seed);
+    else gen.seed(rd());
 
     // Create and shuffle range
     std::uniform_int_distribution<> dist(0, words.size() - 1);
-    std::vector<int> range(count);
+    std::vector<int> range(words.size());
     std::generate(range.begin(), range.end(), [&]() { return dist(gen); });
 
     // Loop to produce words
