@@ -3,6 +3,8 @@
 This is a C++20 command-line tool for generating BIP-39-compatible seed phrases for bitcoin wallets.  
 It uses high-quality random sources and supports customizable wordlist files.
 
+# -- This code does not generate valid wallet phrases!!! --
+
 ## Features
 
 - Generates customizable seed phrases (e.g., 12 or 24 words).
