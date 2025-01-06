@@ -96,6 +96,13 @@ The tool uses:
 
 This approach ensures strong randomness for wallet initialization.
 
+### CAUTION ###
+
+The intent of this program is to produce a random word list. While the software 
+probably does a better job than a human, computers are also pretty bad at creating
+truly random numbers. Hopefully no two machines running at the same exact time
+will produce the same list.
+
 ## Licensing
 
 This project is licensed under the **GNU General Public License (GPL) v3.0**. See the `LICENSE` file for details.
