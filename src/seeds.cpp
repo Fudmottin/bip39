@@ -118,31 +118,31 @@ int main(int argc, char* argv[]) {
     if (seed) gen.seed(*seed);
     else gen.seed(rd());
 
-    // Create and shuffle range
-    std::uniform_int_distribution<> dist(0, words.size() - 1);
+    // Create a shuffled range of indices
     std::vector<int> range(words.size());
-    std::generate(range.begin(), range.end(), [&]() { return dist(gen); });
+    std::iota(range.begin(), range.end(), 0);  // Fill with 0, 1, 2, ..., words.size()-1
+    std::shuffle(range.begin(), range.end(), gen);  // Shuffle once
+
+    std::cout << "\n    Seed Words\n\n";
 
     // Loop to produce words
-    int j = 1;
-    std::cout << "\n    Seed Words\n\n";
-    for (int i : range) {
-        std::cout << std::setw(6) << std::setfill(' ') << j << ") " << words[i] << "\n";
-        if (++j > count) break;
+    for (int j = 0; j < count; ++j) {
+        std::cout << std::setw(6) << std::setfill(' ') << (j + 1) << ") " << words[range[j]] << "\n";
     }
 
-    std::cout << "\n    Tiny Seed" << "\n\n";
+    std::cout << "\n    Tiny Seed\n\n";
 
     // Loop to produce binary representation
-    j = 1;
-    for (int i : range) {
-        std::cout << "    ";
-        std::bitset<12> binary(i + 1); // Assuming 12-bit representation
-        for (int j = 11; j >= 0; --j) { // This j should shadow the outer j
-            std::cout << (binary[j] ? 'X' : '.');
+    for (int j = 0; j < count; ++j) {
+        std::cout << std::setw(6) << std::setfill(' ') << (j + 1) << ") ";
+        // Get the binary representation of the 1-based index (range[j] + 1)
+        std::bitset<12> binary(range[j] + 1); 
+
+        // Print each bit with the custom formatting
+        for (int i = 11; i >= 0; --i) {  // Loop over bits from left to right
+            std::cout << (binary[i] ? "█ " : "_ ");  // "█" for 1, "_" for 0
         }
         std::cout << "\n";
-        if (++j > count) break; // This should be the outer j
     }
     std::cout << "\n\n";
 
