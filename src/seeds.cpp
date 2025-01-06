@@ -12,8 +12,6 @@
 #include <functional>
 #include <optional>
 
-namespace fs = std::filesystem;
-
 void print_usage(const std::string& program_name) {
     std::cerr << "Usage: " << program_name << " <BIP-39-word-file> <count>\n";
 }
