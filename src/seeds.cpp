@@ -1,10 +1,13 @@
 #include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <iomanip>
 #include <iterator>
 #include <random>
 #include <string>
 #include <vector>
+#include <bitset>
+#include <ranges>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -130,11 +133,33 @@ int main(int argc, char* argv[]) {
 
     gen.seed(seed);
 
-    // Shuffle and select words
-    std::shuffle(words.begin(), words.end(), gen);
-    for (int i = 0; i < count; ++i) {
-        std::cout << words[i] << "\n";
+    // Create and shuffle range
+    std::vector<int> range(words.size());
+    std::iota(range.begin(), range.end(), 0);
+    std::shuffle(range.begin(), range.end(), gen);
+
+    // Loop to produce words
+    int j = 1;
+    std::cout << "\n    Seed Words\n\n";
+    for (int i : range) {
+        std::cout << std::setw(6) << std::setfill(' ') << j << ") " << words[i] << "\n";
+        if (++j > count) break;
     }
+
+    std::cout << "\n    Tiny Seed" << "\n\n";
+
+    // Loop to produce binary representation
+    j = 1;
+    for (int i : range) {
+        std::cout << "    ";
+        std::bitset<12> binary(i + 1); // Assuming 12-bit representation
+        for (int j = 11; j >= 0; --j) { // This j should shadow the outer j
+            std::cout << (binary[j] ? 'X' : '.');
+        }
+        std::cout << "\n";
+        if (++j > count) break; // This should be the outer j
+    }
+    std::cout << "\n\n";
 
     return 0;
 }
