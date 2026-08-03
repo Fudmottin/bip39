@@ -1,17 +1,26 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.20)
+
 project(SeedPicker LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Set the default build type to Release with optimization
-if (NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type: Release or Debug" FORCE)
+# Use Release unless the caller explicitly selects another build type.
+if(NOT CMAKE_BUILD_TYPE)
+   set(
+      CMAKE_BUILD_TYPE
+      Release
+      CACHE STRING "Build type: Release or Debug"
+      FORCE
+   )
 endif()
 
-# Add flags for Release and Debug
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
-set(CMAKE_CXX_FLAGS_DEBUG "-g")
+# BIP-39 requires cryptographically secure randomness and SHA-256.
+# Only OpenSSL's Crypto library is needed; TLS is not used by this program.
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
 add_executable(seeds src/seeds.cpp)
+
+target_link_libraries(seeds PRIVATE OpenSSL::Crypto)
 
