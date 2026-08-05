@@ -15,6 +15,8 @@
 #include <utility>
 #include <vector>
 
+std::vector<std::string> make_english_word_list();
+
 namespace {
 
 // BIP-39 word lists contain exactly 2^11 entries. Each mnemonic word
@@ -27,10 +29,9 @@ using Bytes = std::vector<unsigned char>;
 using Digest = std::array<unsigned char, sha256_size>;
 
 void print_usage(const std::string& program_name) {
-   std::cerr
-      << "Usage: " << program_name
-      << " <BIP-39-word-file> <count> [--show-entropy]\n"
-      << "Valid word counts: 12, 15, 18, 21, or 24\n";
+   std::cerr << "Usage: " << program_name
+             << " <BIP-39-word-file> <count> [--show-entropy]\n"
+             << "Valid word counts: 12, 15, 18, 21, or 24\n";
 }
 
 // BIP-39 permits only these mnemonic lengths:
@@ -55,8 +56,7 @@ std::size_t entropy_bytes_for_word_count(std::size_t word_count) {
    case 24:
       return 32;
    default:
-      throw std::invalid_argument{
-         "word count must be 12, 15, 18, 21, or 24"};
+      throw std::invalid_argument{"word count must be 12, 15, 18, 21, or 24"};
    }
 }
 
@@ -105,8 +105,8 @@ std::vector<std::string> load_wordlist(const std::string& filename) {
    }
 
    // Duplicate words would make the word-to-index mapping ambiguous.
-   const std::unordered_set<std::string> unique_words{
-      words.begin(), words.end()};
+   const std::unordered_set<std::string> unique_words{words.begin(),
+                                                      words.end()};
 
    if (unique_words.size() != words.size()) {
       throw std::runtime_error{"wordlist contains duplicate words"};
@@ -139,10 +139,9 @@ Bytes generate_entropy(std::size_t byte_count) {
    //   * use std::random_device;
    //   * use std::mt19937;
    //   * open /dev/random directly.
-   if (RAND_priv_bytes(
-          entropy.data(), static_cast<int>(entropy.size())) != 1) {
-      throw std::runtime_error{
-         "RAND_priv_bytes failed: " + openssl_error_message()};
+   if (RAND_priv_bytes(entropy.data(), static_cast<int>(entropy.size())) != 1) {
+      throw std::runtime_error{"RAND_priv_bytes failed: " +
+                               openssl_error_message()};
    }
 
    return entropy;
@@ -154,14 +153,9 @@ Digest sha256(const Bytes& data) {
 
    // BIP-39 computes SHA-256 over the original entropy. The first ENT / 32
    // bits of this digest become the mnemonic checksum.
-   if (EVP_Digest(data.data(),
-                  data.size(),
-                  digest.data(),
-                  &digest_length,
-                  EVP_sha256(),
-                  nullptr) != 1) {
-      throw std::runtime_error{
-         "SHA-256 failed: " + openssl_error_message()};
+   if (EVP_Digest(data.data(), data.size(), digest.data(), &digest_length,
+                  EVP_sha256(), nullptr) != 1) {
+      throw std::runtime_error{"SHA-256 failed: " + openssl_error_message()};
    }
 
    if (digest_length != digest.size()) {
@@ -183,10 +177,9 @@ bool read_bit(const unsigned char* bytes, std::size_t bit_position) {
    return ((bytes[byte_position] >> shift) & 1U) != 0;
 }
 
-std::vector<std::uint16_t>
-make_indices(const Bytes& entropy,
-             const Digest& digest,
-             std::size_t word_count) {
+std::vector<std::uint16_t> make_indices(const Bytes& entropy,
+                                        const Digest& digest,
+                                        std::size_t word_count) {
    const auto entropy_bit_count = entropy.size() * 8;
 
    // BIP-39 defines:
@@ -195,8 +188,7 @@ make_indices(const Bytes& entropy,
    //
    // ENT + CS is then divided into 11-bit groups.
    const auto checksum_bit_count = entropy_bit_count / 32;
-   const auto combined_bit_count =
-      entropy_bit_count + checksum_bit_count;
+   const auto combined_bit_count = entropy_bit_count + checksum_bit_count;
 
    if (combined_bit_count != word_count * bits_per_word) {
       throw std::logic_error{
@@ -206,9 +198,7 @@ make_indices(const Bytes& entropy,
    std::vector<std::uint16_t> indices;
    indices.reserve(word_count);
 
-   for (std::size_t word_number = 0;
-        word_number < word_count;
-        ++word_number) {
+   for (std::size_t word_number = 0; word_number < word_count; ++word_number) {
       std::uint16_t index{};
 
       // Each word index is formed from eleven consecutive bits.
@@ -216,8 +206,7 @@ make_indices(const Bytes& entropy,
       // Different groups may produce the same index. Repeated words are
       // therefore valid BIP-39 output and must not be removed.
       for (std::size_t bit = 0; bit < bits_per_word; ++bit) {
-         const auto combined_position =
-            word_number * bits_per_word + bit;
+         const auto combined_position = word_number * bits_per_word + bit;
 
          bool value{};
 
@@ -230,8 +219,8 @@ make_indices(const Bytes& entropy,
             value = read_bit(digest.data(), checksum_position);
          }
 
-         index = static_cast<std::uint16_t>(
-            (index << 1U) | static_cast<std::uint16_t>(value));
+         index = static_cast<std::uint16_t>((index << 1U) |
+                                            static_cast<std::uint16_t>(value));
       }
 
       // Eleven bits can only produce values from 0 through 2047.
@@ -246,8 +235,7 @@ make_indices(const Bytes& entropy,
    return indices;
 }
 
-void print_entropy_and_checksum(const Bytes& entropy,
-                                const Digest& digest) {
+void print_entropy_and_checksum(const Bytes& entropy, const Digest& digest) {
    // Caution:
    //
    // The entropy is secret key material. Anyone who obtains it can recreate
@@ -261,9 +249,7 @@ void print_entropy_and_checksum(const Bytes& entropy,
    std::cout << "Entropy:      ";
 
    for (const auto byte : entropy) {
-      std::cout << std::hex
-                << std::setw(2)
-                << std::setfill('0')
+      std::cout << std::hex << std::setw(2) << std::setfill('0')
                 << static_cast<unsigned int>(byte);
    }
 
@@ -287,9 +273,7 @@ void print_mnemonic(const std::vector<std::string>& words,
                     const std::vector<std::uint16_t>& indices) {
    std::cout << "\n    Seed Words\n\n";
 
-   for (std::size_t position = 0;
-        position < indices.size();
-        ++position) {
+   for (std::size_t position = 0; position < indices.size(); ++position) {
       std::cout << std::setw(6) << (position + 1) << ") "
                 << words[indices[position]] << '\n';
    }
@@ -307,19 +291,13 @@ void print_tiny_seed(const std::vector<std::uint16_t>& indices) {
    //
    // Do not add one before engraving or stamping. Doing so would encode a
    // different BIP-39 index.
-   for (std::size_t position = 0;
-        position < indices.size();
-        ++position) {
+   for (std::size_t position = 0; position < indices.size(); ++position) {
       std::cout << std::setw(6) << (position + 1) << ") ";
 
       const std::bitset<bits_per_word> binary{indices[position]};
 
-      for (int bit = static_cast<int>(bits_per_word) - 1;
-           bit >= 0;
-           --bit) {
-         std::cout << (binary[static_cast<std::size_t>(bit)]
-                          ? "█ "
-                          : "_ ");
+      for (int bit = static_cast<int>(bits_per_word) - 1; bit >= 0; --bit) {
+         std::cout << (binary[static_cast<std::size_t>(bit)] ? "█ " : "_ ");
       }
 
       std::cout << '\n';
@@ -337,8 +315,7 @@ int parse_word_count(const std::string& argument) {
    }
 
    if (parsed_characters != argument.size()) {
-      throw std::invalid_argument{
-         "word count contains trailing characters"};
+      throw std::invalid_argument{"word count contains trailing characters"};
    }
 
    if (count <= 0) {
@@ -361,61 +338,54 @@ bool parse_show_entropy(int argc, char* argv[]) {
       return true;
    }
 
-   throw std::invalid_argument{
-      "the only supported option is --show-entropy"};
+   throw std::invalid_argument{"the only supported option is --show-entropy"};
 }
 
 } // namespace
 
-int main(int argc, char* argv[]) {
-   try {
-      if (argc < 3 || argc > 4) {
-         print_usage(argv[0]);
-         return 1;
-      }
-
-      const std::string wordlist_filename{argv[1]};
-      const auto word_count = parse_word_count(argv[2]);
-      const auto show_entropy = parse_show_entropy(argc, argv);
-
-      const auto words = load_wordlist(wordlist_filename);
-
-      const auto entropy_byte_count =
-         entropy_bytes_for_word_count(
-            static_cast<std::size_t>(word_count));
-
-      // Report the random-number API path without exposing random bytes.
-      std::cerr
-         << "Entropy path: OpenSSL RAND_priv_bytes()"
-         << " <- OpenSSL private CSPRNG"
-         << " <- operating-system random generator\n";
-
-      const auto entropy = generate_entropy(entropy_byte_count);
-      const auto digest = sha256(entropy);
-      const auto indices =
-         make_indices(entropy,
-                      digest,
-                      static_cast<std::size_t>(word_count));
-
-      if (show_entropy) {
-         print_entropy_and_checksum(entropy, digest);
-      }
-
-      print_mnemonic(words, indices);
-      print_tiny_seed(indices);
-
-      std::cout << '\n';
-
-      // Security caution:
-      //
-      // The mnemonic itself is secret key material. Terminal output may be
-      // retained in scrollback, logs, backups, screenshots or remote-session
-      // history. Real wallet material should be generated only on a suitably
-      // trusted and preferably offline system.
-      return 0;
-   } catch (const std::exception& error) {
-      std::cerr << "Error: " << error.what() << '\n';
+int main(int argc, char* argv[]) try {
+   if (argc < 3 || argc > 4) {
+      print_usage(argv[0]);
       return 1;
    }
+
+   const std::string wordlist_filename{argv[1]};
+   const auto word_count = parse_word_count(argv[2]);
+   const auto show_entropy = parse_show_entropy(argc, argv);
+
+   const auto words = make_english_word_list();
+
+   const auto entropy_byte_count =
+      entropy_bytes_for_word_count(static_cast<std::size_t>(word_count));
+
+   // Report the random-number API path without exposing random bytes.
+   std::cerr << "Entropy path: OpenSSL RAND_priv_bytes()"
+             << " <- OpenSSL private CSPRNG"
+             << " <- operating-system random generator\n";
+
+   const auto entropy = generate_entropy(entropy_byte_count);
+   const auto digest = sha256(entropy);
+   const auto indices =
+      make_indices(entropy, digest, static_cast<std::size_t>(word_count));
+
+   if (show_entropy) {
+      print_entropy_and_checksum(entropy, digest);
+   }
+
+   print_mnemonic(words, indices);
+   print_tiny_seed(indices);
+
+   std::cout << '\n';
+
+   // Security caution:
+   //
+   // The mnemonic itself is secret key material. Terminal output may be
+   // retained in scrollback, logs, backups, screenshots or remote-session
+   // history. Real wallet material should be generated only on a suitably
+   // trusted and preferably offline system.
+   return 0;
+} catch (const std::exception& error) {
+   std::cerr << "Error: " << error.what() << '\n';
+   return 1;
 }
 

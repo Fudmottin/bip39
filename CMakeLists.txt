@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(SeedPicker LANGUAGES CXX)
+project(seeds LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,7 +20,8 @@ endif()
 # Only OpenSSL's Crypto library is needed; TLS is not used by this program.
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
-add_executable(seeds src/seeds.cpp)
+add_executable(seeds src/seeds.cpp
+   src/english_words.cpp)
 
 target_link_libraries(seeds PRIVATE OpenSSL::Crypto)
 
