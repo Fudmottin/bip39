@@ -34,13 +34,15 @@ namespace po = boost::program_options;
 
 struct ProgramOptions {
    ProgramOptions()
-      : wordlist_filename{}
-      , word_count{12}
-      , show_entropy{false} {}
+      : wordlist_filename{},
+        word_count{12},
+        show_entropy{false},
+        show_help{false} {}
 
    std::string wordlist_filename;
    std::size_t word_count;
    bool show_entropy;
+   bool show_help;
 };
 
 // BIP-39 permits only these mnemonic lengths:
@@ -313,25 +315,47 @@ void print_tiny_seed(const std::vector<std::uint16_t>& indices) {
    }
 }
 
+void add_command_line_options(po::options_description& description,
+                              ProgramOptions& options) {
+   description.add_options()
+      ("help,h",
+       po::bool_switch(&options.show_help),
+       "display this help and exit")
+      ("wordlist,w",
+       po::value<std::string>(&options.wordlist_filename),
+       "read the BIP-39 wordlist from FILE; defaults to compiled English")
+      ("words,n",
+       po::value<std::size_t>(&options.word_count),
+       "number of mnemonic words: 12, 15, 18, 21, or 24; defaults to 12")
+      ("show-entropy,e",
+       po::bool_switch(&options.show_entropy),
+       "display the entropy and checksum");
+}
+
+void print_help(const std::string& program_name) {
+   ProgramOptions options{};
+   po::options_description description{"Options"};
+
+   add_command_line_options(description, options);
+
+   std::cout << "Usage: " << program_name << " [options]\n\n"
+             << description << '\n';
+}
+
 ProgramOptions parse_command_line(int argc, char* argv[]) {
    ProgramOptions options{};
 
-   po::options_description supported_options{"Supported options"};
-   supported_options.add_options()("wordlist,w",
-                                   po::value<std::string>(
-                                      &options.wordlist_filename),
-                                   "read the BIP-39 wordlist from FILE")(
-      "words,n", po::value<std::size_t>(&options.word_count),
-      "number of mnemonic words: 12, 15, 18, 21, or 24")(
-      "show-entropy,e", po::bool_switch(&options.show_entropy),
-      "display the entropy and checksum");
+   po::options_description description{"Options"};
+   add_command_line_options(description, options);
 
    po::variables_map variables;
-   po::store(po::parse_command_line(argc, argv, supported_options), variables);
+   po::store(po::parse_command_line(argc, argv, description), variables);
    po::notify(variables);
 
-   // Validate both the supplied value and the default value.
-   static_cast<void>(entropy_bytes_for_word_count(options.word_count));
+   if (!options.show_help) {
+      static_cast<void>(
+         entropy_bytes_for_word_count(options.word_count));
+   }
 
    return options;
 }
@@ -342,10 +366,14 @@ int main(int argc, char* argv[]) try {
    ProgramOptions options{};
    options = parse_command_line(argc, argv);
 
+   if (options.show_help) {
+      print_help(argv[0]);
+      return 0;
+   }
+
    const auto words = options.wordlist_filename.empty()
                          ? make_english_word_list()
                          : load_wordlist(options.wordlist_filename);
-
    const auto entropy_byte_count =
       entropy_bytes_for_word_count(options.word_count);
 
