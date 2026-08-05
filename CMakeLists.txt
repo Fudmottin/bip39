@@ -20,8 +20,19 @@ endif()
 # Only OpenSSL's Crypto library is needed; TLS is not used by this program.
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
-add_executable(seeds src/seeds.cpp
-   src/english_words.cpp)
+# Command-line argument processing.
+find_package(Boost 1.90 CONFIG REQUIRED COMPONENTS program_options)
 
-target_link_libraries(seeds PRIVATE OpenSSL::Crypto)
+add_executable(
+   seeds
+   src/seeds.cpp
+   src/english_words.cpp
+)
+
+target_link_libraries(
+   seeds
+   PRIVATE
+      OpenSSL::Crypto
+      Boost::program_options
+)
 

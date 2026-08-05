@@ -2,6 +2,8 @@
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 
+#include <boost/program_options.hpp>
+
 #include <array>
 #include <bitset>
 #include <cstddef>
@@ -28,11 +30,18 @@ constexpr std::size_t sha256_size{32};
 using Bytes = std::vector<unsigned char>;
 using Digest = std::array<unsigned char, sha256_size>;
 
-void print_usage(const std::string& program_name) {
-   std::cerr << "Usage: " << program_name
-             << " <BIP-39-word-file> <count> [--show-entropy]\n"
-             << "Valid word counts: 12, 15, 18, 21, or 24\n";
-}
+namespace po = boost::program_options;
+
+struct ProgramOptions {
+   ProgramOptions()
+      : wordlist_filename{}
+      , word_count{12}
+      , show_entropy{false} {}
+
+   std::string wordlist_filename;
+   std::size_t word_count;
+   bool show_entropy;
+};
 
 // BIP-39 permits only these mnemonic lengths:
 //
@@ -304,59 +313,41 @@ void print_tiny_seed(const std::vector<std::uint16_t>& indices) {
    }
 }
 
-int parse_word_count(const std::string& argument) {
-   std::size_t parsed_characters{};
-   int count{};
+ProgramOptions parse_command_line(int argc, char* argv[]) {
+   ProgramOptions options{};
 
-   try {
-      count = std::stoi(argument, &parsed_characters);
-   } catch (const std::exception&) {
-      throw std::invalid_argument{"word count is not a valid integer"};
-   }
+   po::options_description supported_options{"Supported options"};
+   supported_options.add_options()("wordlist,w",
+                                   po::value<std::string>(
+                                      &options.wordlist_filename),
+                                   "read the BIP-39 wordlist from FILE")(
+      "words,n", po::value<std::size_t>(&options.word_count),
+      "number of mnemonic words: 12, 15, 18, 21, or 24")(
+      "show-entropy,e", po::bool_switch(&options.show_entropy),
+      "display the entropy and checksum");
 
-   if (parsed_characters != argument.size()) {
-      throw std::invalid_argument{"word count contains trailing characters"};
-   }
+   po::variables_map variables;
+   po::store(po::parse_command_line(argc, argv, supported_options), variables);
+   po::notify(variables);
 
-   if (count <= 0) {
-      throw std::invalid_argument{"word count must be positive"};
-   }
+   // Validate both the supplied value and the default value.
+   static_cast<void>(entropy_bytes_for_word_count(options.word_count));
 
-   // This also performs the required BIP-39 count validation.
-   static_cast<void>(
-      entropy_bytes_for_word_count(static_cast<std::size_t>(count)));
-
-   return count;
-}
-
-bool parse_show_entropy(int argc, char* argv[]) {
-   if (argc == 3) {
-      return false;
-   }
-
-   if (argc == 4 && std::string{argv[3]} == "--show-entropy") {
-      return true;
-   }
-
-   throw std::invalid_argument{"the only supported option is --show-entropy"};
+   return options;
 }
 
 } // namespace
 
 int main(int argc, char* argv[]) try {
-   if (argc < 3 || argc > 4) {
-      print_usage(argv[0]);
-      return 1;
-   }
+   ProgramOptions options{};
+   options = parse_command_line(argc, argv);
 
-   const std::string wordlist_filename{argv[1]};
-   const auto word_count = parse_word_count(argv[2]);
-   const auto show_entropy = parse_show_entropy(argc, argv);
-
-   const auto words = make_english_word_list();
+   const auto words = options.wordlist_filename.empty()
+                         ? make_english_word_list()
+                         : load_wordlist(options.wordlist_filename);
 
    const auto entropy_byte_count =
-      entropy_bytes_for_word_count(static_cast<std::size_t>(word_count));
+      entropy_bytes_for_word_count(options.word_count);
 
    // Report the random-number API path without exposing random bytes.
    std::cerr << "Entropy path: OpenSSL RAND_priv_bytes()"
@@ -365,10 +356,9 @@ int main(int argc, char* argv[]) try {
 
    const auto entropy = generate_entropy(entropy_byte_count);
    const auto digest = sha256(entropy);
-   const auto indices =
-      make_indices(entropy, digest, static_cast<std::size_t>(word_count));
+   const auto indices = make_indices(entropy, digest, options.word_count);
 
-   if (show_entropy) {
+   if (options.show_entropy) {
       print_entropy_and_checksum(entropy, digest);
    }
 
