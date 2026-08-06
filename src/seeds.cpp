@@ -1,5 +1,3 @@
-// src/seeds.cpp
-
 #include <boost/program_options.hpp>
 
 #include <algorithm>
@@ -27,6 +25,7 @@
 #include <vector>
 
 #include "bip39.hpp"
+#include "entropy.hpp"
 
 namespace {
 
@@ -43,7 +42,8 @@ struct ProgramOptions {
       , show_entropy{false}
       , show_help{false}
       , show_seed{false}
-      , use_dice{false} {}
+      , use_dice{false}
+      , use_dice_only{false} {}
 
    std::string wordlist_filename;
    std::size_t word_count;
@@ -51,6 +51,7 @@ struct ProgramOptions {
    bool show_help;
    bool show_seed;
    bool use_dice;
+   bool use_dice_only;
 };
 
 class SensitiveString {
@@ -244,31 +245,7 @@ Bytes generate_system_entropy(std::size_t byte_count) {
    return entropy;
 }
 
-std::size_t dice_roll_count_for_entropy(std::size_t byte_count) {
-   // These counts provide approximately 64 bits more dice entropy than
-   // the requested BIP-39 entropy length.
-   switch (byte_count) {
-   case 16:
-      return 75;
-   case 20:
-      return 87;
-   case 24:
-      return 100;
-   case 28:
-      return 112;
-   case 32:
-      return 124;
-   default:
-      throw std::logic_error{"unsupported BIP-39 entropy length"};
-   }
-}
-
-void append_uint16_be(Bytes& bytes, std::uint16_t value) {
-   bytes.push_back(static_cast<unsigned char>(value >> 8U));
-   bytes.push_back(static_cast<unsigned char>(value & 0xffU));
-}
-
-unsigned char read_die_roll(std::size_t roll_number, std::size_t roll_count) {
+char read_die_face(std::size_t roll_number, std::size_t roll_count) {
    for (;;) {
       std::cout << "Roll " << roll_number << '/' << roll_count << ": "
                 << std::flush;
@@ -284,50 +261,61 @@ unsigned char read_die_roll(std::size_t roll_number, std::size_t roll_count) {
       char extra{};
 
       if ((stream >> roll) && !(stream >> extra) && roll >= 1 && roll <= 6) {
-         // Store die faces as canonical base-6 digits from 0 through 5.
-         return static_cast<unsigned char>(roll - 1);
+         return static_cast<char>('0' + roll);
       }
 
       std::cerr << "Please enter one die result from 1 through 6.\n";
    }
 }
 
-Bytes generate_dice_entropy(std::size_t byte_count) {
-   constexpr std::string_view domain{"bip39-dice-v1"};
+entropy::ZeroBasedDiceRolls read_mixed_dice_rolls(std::size_t roll_count) {
+   entropy::ZeroBasedDiceRolls rolls;
+   rolls.reserve(roll_count);
 
+   for (std::size_t roll_number = 1; roll_number <= roll_count; ++roll_number) {
+      const auto face = read_die_face(roll_number, roll_count);
+      rolls.push_back(static_cast<unsigned char>(face - '1'));
+   }
+
+   return rolls;
+}
+
+std::string read_ascii_dice_rolls(std::size_t roll_count) {
+   std::string rolls;
+   rolls.reserve(roll_count);
+
+   for (std::size_t roll_number = 1; roll_number <= roll_count; ++roll_number) {
+      rolls.push_back(read_die_face(roll_number, roll_count));
+   }
+
+   return rolls;
+}
+
+Bytes generate_mixed_dice_entropy(std::size_t byte_count) {
    const auto entropy_bit_count = byte_count * 8U;
-   const auto roll_count = dice_roll_count_for_entropy(byte_count);
+   const auto roll_count = entropy::mixed_dice_roll_count(byte_count);
 
    std::cout << "Dice mode requires " << roll_count << " rolls for "
              << entropy_bit_count << " bits of BIP-39 entropy.\n"
              << "Enter each die result as a number from 1 through 6.\n\n";
 
-   Bytes conditioner_input;
-   conditioner_input.reserve(domain.size() + 4U + roll_count +
-                             bip39::sha256_size);
-
-   conditioner_input.insert(conditioner_input.end(), domain.begin(),
-                            domain.end());
-
-   append_uint16_be(conditioner_input,
-                    static_cast<std::uint16_t>(entropy_bit_count));
-
-   append_uint16_be(conditioner_input, static_cast<std::uint16_t>(roll_count));
-
-   for (std::size_t roll_number = 1; roll_number <= roll_count; ++roll_number) {
-      conditioner_input.push_back(read_die_roll(roll_number, roll_count));
-   }
-
+   const auto rolls = read_mixed_dice_rolls(roll_count);
    const auto system_random = generate_system_entropy(bip39::sha256_size);
-   conditioner_input.insert(conditioner_input.end(), system_random.begin(),
-                            system_random.end());
+   return entropy::mix_dice_entropy(rolls, system_random, byte_count);
+}
 
-   const auto digest = bip39::sha256(conditioner_input);
+Bytes generate_dice_only_entropy(std::size_t byte_count) {
+   const auto entropy_bit_count = byte_count * 8U;
+   const auto roll_count = entropy::dice_only_roll_count(byte_count);
 
-   Bytes entropy(byte_count);
-   std::copy_n(digest.begin(), byte_count, entropy.begin());
+   std::cout << "Dice-only compatibility mode requires " << roll_count
+             << " rolls for " << entropy_bit_count
+             << " bits of BIP-39 entropy.\n"
+             << "This mode does not mix OpenSSL randomness.\n"
+             << "Enter each die result as a number from 1 through 6.\n\n";
 
-   return entropy;
+   const auto rolls = read_ascii_dice_rolls(roll_count);
+   return entropy::dice_only_entropy(rolls, byte_count);
 }
 
 // Read one bit with the most significant bit of the first byte first.
@@ -530,6 +518,8 @@ void add_command_line_options(po::options_description& description,
       "number of mnemonic words: 12, 15, 18, 21, or 24; defaults to 12")(
       "dice,d", po::bool_switch(&options.use_dice),
       "interactively mix dice rolls with OpenSSL private randomness")(
+      "dice-only", po::bool_switch(&options.use_dice_only),
+      "use only SHA-256 of ASCII dice rolls for compatibility")(
       "show-entropy,e", po::bool_switch(&options.show_entropy),
       "display the entropy and checksum")(
       "show-seed", po::bool_switch(&options.show_seed),
@@ -557,6 +547,11 @@ ProgramOptions parse_command_line(int argc, char* argv[]) {
    po::notify(variables);
 
    if (!options.show_help) {
+      if (options.use_dice && options.use_dice_only) {
+         throw std::invalid_argument{
+            "--dice and --dice-only are mutually exclusive"};
+      }
+
       static_cast<void>(
          bip39::entropy_bytes_for_word_count(options.word_count));
    }
@@ -584,10 +579,15 @@ int main(int argc, char* argv[]) try {
    // Report the random-number API path without exposing random bytes.
    Bytes entropy;
 
-   if (options.use_dice) {
+   if (options.use_dice_only) {
+      std::cerr
+         << "Entropy path: SHA-256(ASCII dice rolls), no system randomness\n";
+
+      entropy = generate_dice_only_entropy(entropy_byte_count);
+   } else if (options.use_dice) {
       std::cerr << "Entropy path: SHA-256(dice rolls || RAND_priv_bytes())\n";
 
-      entropy = generate_dice_entropy(entropy_byte_count);
+      entropy = generate_mixed_dice_entropy(entropy_byte_count);
    } else {
       std::cerr << "Entropy path: OpenSSL RAND_priv_bytes()"
                 << " <- OpenSSL private CSPRNG"
@@ -630,4 +630,3 @@ int main(int argc, char* argv[]) try {
    std::cerr << "Error: " << error.what() << '\n';
    return 1;
 }
-

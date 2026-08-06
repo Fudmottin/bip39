@@ -23,6 +23,7 @@ add_library(
    STATIC
    src/bip39.cpp
    src/english_words.cpp
+   src/entropy.cpp
 )
 
 target_compile_features(

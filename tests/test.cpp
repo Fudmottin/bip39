@@ -1,5 +1,3 @@
-// tests/test.cpp
-
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -15,6 +13,7 @@
 #include <vector>
 
 #include "bip39.hpp"
+#include "entropy.hpp"
 
 namespace {
 struct TestVector {
@@ -393,6 +392,116 @@ bool test_seed_input_validation() {
    return passed;
 }
 
+bool test_dice_entropy(const std::vector<std::string>& words) {
+   struct DiceVector {
+      std::string_view rolls;
+      std::size_t byte_count;
+      std::size_t word_count;
+      std::string_view entropy_hex;
+      std::string_view mnemonic;
+   };
+
+   constexpr std::array<DiceVector, 2> vectors{{
+      {"65515223131652132161133154444123616466443112153441", 16, 12,
+       "6cb09af855050dcde6fe2adc3181c250",
+       "hole luggage safe present express tragic orbit shed switch metal "
+       "identify path"},
+      {"655152231316521321611331544441236164664431121534415633526456254462"
+       "245546236542364246312613322234612",
+       32, 24,
+       "51531761ec7a738946e0b9f46bb11320a695495430e345c14f01ad8b3b898a6d",
+       "eyebrow obvious such suggest poet seven breeze blame virtual frown "
+       "dynamic donor harsh pigeon express broccoli easy apology scatter "
+       "force recipe shadow claim radio"},
+   }};
+
+   constexpr std::array<std::pair<std::size_t, std::size_t>, 5> roll_counts{{
+      {16, 50},
+      {20, 62},
+      {24, 75},
+      {28, 87},
+      {32, 99},
+   }};
+
+   bool passed{true};
+
+   for (const auto& [byte_count, expected_rolls] : roll_counts) {
+      if (entropy::dice_only_roll_count(byte_count) != expected_rolls) {
+         std::cerr << "dice-only roll-count mapping failed for " << byte_count
+                   << " entropy bytes\n";
+         passed = false;
+      }
+   }
+
+   for (const auto& vector : vectors) {
+      const auto actual_entropy =
+         entropy::dice_only_entropy(vector.rolls, vector.byte_count);
+
+      if (bytes_to_hex(actual_entropy) != vector.entropy_hex) {
+         std::cerr << "dice-only entropy vector failed for "
+                   << vector.word_count << " words\n"
+                   << "expected: " << vector.entropy_hex << '\n'
+                   << "actual:   " << bytes_to_hex(actual_entropy) << '\n';
+         passed = false;
+         continue;
+      }
+
+      const auto digest = bip39::sha256(actual_entropy);
+      const auto indices =
+         bip39::make_indices(actual_entropy, digest, vector.word_count);
+      const auto actual_mnemonic = make_mnemonic(words, indices);
+
+      if (actual_mnemonic != vector.mnemonic) {
+         std::cerr << "dice-only mnemonic vector failed for "
+                   << vector.word_count << " words\n"
+                   << "expected: " << vector.mnemonic << '\n'
+                   << "actual:   " << actual_mnemonic << '\n';
+         passed = false;
+      }
+   }
+
+   auto invalid_rolls = std::string{vectors.front().rolls};
+   invalid_rolls.front() = '0';
+
+   if (!expect_invalid_argument(
+          "dice-only roll outside 1 through 6", [&invalid_rolls] {
+             static_cast<void>(entropy::dice_only_entropy(invalid_rolls, 16));
+          })) {
+      passed = false;
+   }
+
+   if (!expect_invalid_argument("incorrect dice-only roll count", [&vectors] {
+          static_cast<void>(
+             entropy::dice_only_entropy(vectors.front().rolls.substr(1), 16));
+       })) {
+      passed = false;
+   }
+
+   entropy::ZeroBasedDiceRolls mixed_rolls(75);
+   for (std::size_t index = 0; index < mixed_rolls.size(); ++index) {
+      mixed_rolls[index] = static_cast<unsigned char>(index % 6U);
+   }
+
+   bip39::Bytes system_random(bip39::sha256_size);
+   for (std::size_t index = 0; index < system_random.size(); ++index) {
+      system_random[index] = static_cast<unsigned char>(index);
+   }
+
+   constexpr std::string_view expected_mixed_entropy{
+      "177835c5facc99776006143dc364d5b9"};
+   const auto actual_mixed_entropy =
+      entropy::mix_dice_entropy(mixed_rolls, system_random, 16);
+
+   if (bytes_to_hex(actual_mixed_entropy) != expected_mixed_entropy) {
+      std::cerr << "mixed dice entropy vector failed\n"
+                << "expected: " << expected_mixed_entropy << '\n'
+                << "actual:   " << bytes_to_hex(actual_mixed_entropy) << '\n';
+      passed = false;
+   }
+
+   return passed;
+}
+
 bool test_vector(std::size_t number, const TestVector& vector,
                  const std::vector<std::string>& words) {
    const auto entropy = bytes_from_hex(vector.entropy_hex);
@@ -455,6 +564,10 @@ int main() try {
       std::cerr << "compiled English wordlist does not contain 2048 words\n";
       ++failure_count;
    } else {
+      if (!test_dice_entropy(words)) {
+         ++failure_count;
+      }
+
       for (std::size_t index = 0; index < test_vectors.size(); ++index) {
          if (!test_vector(index + 1, test_vectors[index], words)) {
             ++failure_count;
@@ -470,10 +583,10 @@ int main() try {
    std::cout << test_vectors.size()
              << " BIP-39 English mnemonic and seed vectors passed\n"
              << "BIP-39 input validation passed\n"
-             << "BIP-39 ASCII seed derivation passed\n";
+             << "BIP-39 ASCII seed derivation passed\n"
+             << "Dice entropy derivation passed\n";
    return 0;
 } catch (const std::exception& error) {
    std::cerr << "test error: " << error.what() << '\n';
    return 1;
 }
-
