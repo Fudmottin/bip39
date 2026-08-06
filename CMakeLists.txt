@@ -1,13 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(seeds LANGUAGES CXX)
-
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+project(bip39 LANGUAGES CXX)
 
 # Use Release unless the caller explicitly selects another build type.
-if(NOT CMAKE_BUILD_TYPE)
+# CMAKE_CONFIGURATION_TYPES protects multi-configuration generators.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
    set(
       CMAKE_BUILD_TYPE
       Release
@@ -16,23 +13,49 @@ if(NOT CMAKE_BUILD_TYPE)
    )
 endif()
 
-# BIP-39 requires cryptographically secure randomness and SHA-256.
-# Only OpenSSL's Crypto library is needed; TLS is not used by this program.
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
-
-# Command-line argument processing.
 find_package(Boost 1.90 CONFIG REQUIRED COMPONENTS program_options)
+
+include(CTest)
+
+add_library(
+   bip39_core
+   STATIC
+   src/bip39.cpp
+   src/english_words.cpp
+)
+
+target_compile_features(
+   bip39_core
+   PUBLIC
+      cxx_std_20
+)
+
+target_include_directories(
+   bip39_core
+   PUBLIC
+      "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
+
+target_link_libraries(
+   bip39_core
+   PRIVATE
+      OpenSSL::Crypto
+)
 
 add_executable(
    seeds
    src/seeds.cpp
-   src/english_words.cpp
 )
 
 target_link_libraries(
    seeds
    PRIVATE
-      OpenSSL::Crypto
+      bip39_core
       Boost::program_options
 )
+
+if(BUILD_TESTING)
+   add_subdirectory(tests)
+endif()
 
