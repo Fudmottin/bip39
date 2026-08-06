@@ -448,6 +448,11 @@ ProgramOptions parse_command_line(int argc, char* argv[]) {
 
 } // namespace
 
+// A test harness can use this file by defineing TEST_HARNESS to remove the
+// main function. A normal build won't do that. This means I don't have to
+// move the above functions into their own file to create a testing harness.
+#ifndef TEST_HARNESS
+   
 int main(int argc, char* argv[]) try {
    ProgramOptions options{};
    options = parse_command_line(argc, argv);
@@ -501,4 +506,5 @@ int main(int argc, char* argv[]) try {
    std::cerr << "Error: " << error.what() << '\n';
    return 1;
 }
+#endif // TEST_HARNESS
 
