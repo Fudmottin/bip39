@@ -1,3 +1,5 @@
+// src/bip39.cpp
+
 #include "bip39.hpp"
 
 #include <openssl/err.h>
@@ -79,6 +81,13 @@ Digest sha256(const Bytes& data) {
 std::vector<std::uint16_t> make_indices(const Bytes& entropy,
                                         const Digest& digest,
                                         std::size_t word_count) {
+   const auto expected_entropy_byte_count =
+      entropy_bytes_for_word_count(word_count);
+
+   if (entropy.size() != expected_entropy_byte_count) {
+      throw std::invalid_argument{"entropy size does not match word count"};
+   }
+
    const auto entropy_bit_count = entropy.size() * 8;
 
    // BIP-39 defines CS = ENT / 32. ENT + CS is divided into 11-bit groups.
@@ -133,3 +142,4 @@ std::vector<std::string> make_english_word_list() {
 }
 
 } // namespace bip39
+

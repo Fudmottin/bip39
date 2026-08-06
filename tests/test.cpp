@@ -156,6 +156,25 @@ std::string make_mnemonic(const std::vector<std::string>& words,
    return mnemonic;
 }
 
+template <typename Function>
+bool expect_invalid_argument(std::string_view description, Function&& function) {
+   try {
+      std::forward<Function>(function)();
+   } catch (const std::invalid_argument&) {
+      return true;
+   } catch (const std::exception& error) {
+      std::cerr << description << " threw the wrong exception: "
+                << error.what() << '\n';
+      return false;
+   } catch (...) {
+      std::cerr << description << " threw a non-standard exception\n";
+      return false;
+   }
+
+   std::cerr << description << " did not throw std::invalid_argument\n";
+   return false;
+}
+
 bool test_entropy_sizes() {
    constexpr std::array<std::pair<std::size_t, std::size_t>, 5> cases{{
       {12, 16},
@@ -173,6 +192,96 @@ bool test_entropy_sizes() {
    }
 
    return true;
+}
+
+bool test_unsupported_word_counts() {
+   struct InvalidCase {
+      std::size_t word_count;
+      std::size_t entropy_bytes;
+   };
+
+   // Several cases deliberately satisfy the old bit-count arithmetic despite
+   // not being permitted by BIP-39: 0/0, 3/4, 6/8, 9/12, and 27/36.
+   constexpr std::array<InvalidCase, 10> invalid_cases{{
+      {0, 0},
+      {3, 4},
+      {6, 8},
+      {9, 12},
+      {11, 16},
+      {13, 16},
+      {16, 20},
+      {23, 32},
+      {25, 32},
+      {27, 36},
+   }};
+
+   const bip39::Digest digest{};
+   bool passed{true};
+
+   for (const auto& [word_count, byte_count] : invalid_cases) {
+      const auto mapping_description =
+         "entropy mapping for unsupported word count " +
+         std::to_string(word_count);
+
+      if (!expect_invalid_argument(mapping_description, [word_count] {
+             static_cast<void>(
+                bip39::entropy_bytes_for_word_count(word_count));
+          })) {
+         passed = false;
+      }
+
+      const bip39::Bytes entropy(byte_count);
+      const auto indices_description =
+         "index generation for unsupported word count " +
+         std::to_string(word_count);
+
+      if (!expect_invalid_argument(
+             indices_description, [&entropy, &digest, word_count] {
+                static_cast<void>(
+                   bip39::make_indices(entropy, digest, word_count));
+             })) {
+         passed = false;
+      }
+   }
+
+   return passed;
+}
+
+bool test_invalid_entropy_sizes() {
+   constexpr std::array<std::pair<std::size_t, std::size_t>, 5> valid_cases{{
+      {12, 16},
+      {15, 20},
+      {18, 24},
+      {21, 28},
+      {24, 32},
+   }};
+
+   const bip39::Digest digest{};
+   bool passed{true};
+
+   for (const auto& [word_count, expected_bytes] : valid_cases) {
+      const std::array<std::size_t, 2> invalid_sizes{
+         expected_bytes - 1,
+         expected_bytes + 1,
+      };
+
+      for (const auto byte_count : invalid_sizes) {
+         const bip39::Bytes entropy(byte_count);
+         const auto description =
+            "index generation for " + std::to_string(byte_count) +
+            " entropy bytes and " + std::to_string(word_count) + " words";
+
+         if (!expect_invalid_argument(
+                description, [&entropy, &digest, word_count] {
+                   static_cast<void>(
+                      bip39::make_indices(entropy, digest, word_count));
+                })) {
+            passed = false;
+         }
+      }
+   }
+
+   return passed;
 }
 
 bool test_vector(std::size_t number,
@@ -209,6 +318,14 @@ int main() try {
       ++failure_count;
    }
 
+   if (!test_unsupported_word_counts()) {
+      ++failure_count;
+   }
+
+   if (!test_invalid_entropy_sizes()) {
+      ++failure_count;
+   }
+
    const auto words = bip39::make_english_word_list();
    if (words.size() != bip39::wordlist_size) {
       std::cerr << "compiled English wordlist does not contain 2048 words\n";
@@ -227,9 +344,11 @@ int main() try {
    }
 
    std::cout << test_vectors.size()
-             << " BIP-39 English mnemonic vectors passed\n";
+             << " BIP-39 English mnemonic vectors passed\n"
+             << "BIP-39 input validation passed\n";
    return 0;
 } catch (const std::exception& error) {
    std::cerr << "test error: " << error.what() << '\n';
    return 1;
 }
+

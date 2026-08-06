@@ -1,3 +1,5 @@
+// src/bip39.hpp
+
 #ifndef BIP39_HPP
 #define BIP39_HPP
 
@@ -29,3 +31,4 @@ std::vector<std::string> make_english_word_list();
 } // namespace bip39
 
 #endif
+
