@@ -1,3 +1,4 @@
+#include <string>
 #include <vector>
 
 std::vector<std::string> make_english_word_list() {

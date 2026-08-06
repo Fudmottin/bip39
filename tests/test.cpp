@@ -1,3 +1,5 @@
+// tests/test.cpp
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -10,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-#include "test.hpp"
+#include "bip39.hpp"
 
 namespace {
 struct TestVector {
@@ -114,12 +116,12 @@ unsigned char hex_value(char digit) {
    throw std::invalid_argument{"invalid hexadecimal digit"};
 }
 
-Bytes bytes_from_hex(std::string_view text) {
+bip39::Bytes bytes_from_hex(std::string_view text) {
    if (text.size() % 2 != 0) {
       throw std::invalid_argument{"hexadecimal entropy must contain whole bytes"};
    }
 
-   Bytes bytes;
+   bip39::Bytes bytes;
    bytes.reserve(text.size() / 2);
 
    for (std::size_t position = 0; position < text.size(); position += 2) {
@@ -164,7 +166,7 @@ bool test_entropy_sizes() {
    }};
 
    for (const auto& [words, bytes] : cases) {
-      if (entropy_bytes_for_word_count(words) != bytes) {
+      if (bip39::entropy_bytes_for_word_count(words) != bytes) {
          std::cerr << "word-count mapping failed for " << words << " words\n";
          return false;
       }
@@ -178,11 +180,11 @@ bool test_vector(std::size_t number,
                  const std::vector<std::string>& words) {
    const auto entropy = bytes_from_hex(vector.entropy_hex);
    const auto expected_word_count = count_words(vector.mnemonic);
-   const auto digest = sha256(entropy);
-   const auto indices = make_indices(entropy, digest, expected_word_count);
+   const auto digest = bip39::sha256(entropy);
+   const auto indices = bip39::make_indices(entropy, digest, expected_word_count);
    const auto actual = make_mnemonic(words, indices);
 
-   if (entropy_bytes_for_word_count(expected_word_count) != entropy.size()) {
+   if (bip39::entropy_bytes_for_word_count(expected_word_count) != entropy.size()) {
       std::cerr << "vector " << number
                 << " has inconsistent entropy and mnemonic lengths\n";
       return false;
@@ -207,8 +209,8 @@ int main() try {
       ++failure_count;
    }
 
-   const auto words = make_english_word_list();
-   if (words.size() != bip39_wordlist_size) {
+   const auto words = bip39::make_english_word_list();
+   if (words.size() != bip39::wordlist_size) {
       std::cerr << "compiled English wordlist does not contain 2048 words\n";
       ++failure_count;
    } else {
@@ -231,4 +233,3 @@ int main() try {
    std::cerr << "test error: " << error.what() << '\n';
    return 1;
 }
-

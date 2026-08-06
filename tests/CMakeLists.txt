@@ -13,4 +13,3 @@ add_test(
    NAME bip39.vectors
    COMMAND bip39_tests
 )
-

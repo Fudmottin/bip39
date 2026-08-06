@@ -1,7 +1,10 @@
+// src/seeds.cpp
+
+#include "bip39.hpp"
+
 #include <boost/program_options.hpp>
 
 #include <openssl/err.h>
-#include <openssl/evp.h>
 #include <openssl/rand.h>
 
 #include <algorithm>
@@ -20,18 +23,10 @@
 #include <utility>
 #include <vector>
 
-std::vector<std::string> make_english_word_list();
-
 namespace {
 
-// BIP-39 word lists contain exactly 2^11 entries. Each mnemonic word
-// therefore represents one 11-bit, zero-based index.
-constexpr std::size_t bip39_wordlist_size{2048};
-constexpr std::size_t bits_per_word{11};
-constexpr std::size_t sha256_size{32};
-
-using Bytes = std::vector<unsigned char>;
-using Digest = std::array<unsigned char, sha256_size>;
+using bip39::Bytes;
+using bip39::Digest;
 
 namespace po = boost::program_options;
 
@@ -49,32 +44,6 @@ struct ProgramOptions {
    bool show_help;
    bool use_dice;
 };
-
-// BIP-39 permits only these mnemonic lengths:
-//
-//   12 words -> 128 entropy bits + 4 checksum bits
-//   15 words -> 160 entropy bits + 5 checksum bits
-//   18 words -> 192 entropy bits + 6 checksum bits
-//   21 words -> 224 entropy bits + 7 checksum bits
-//   24 words -> 256 entropy bits + 8 checksum bits
-//
-// The initial entropy length is called ENT in BIP-39.
-std::size_t entropy_bytes_for_word_count(std::size_t word_count) {
-   switch (word_count) {
-   case 12:
-      return 16;
-   case 15:
-      return 20;
-   case 18:
-      return 24;
-   case 21:
-      return 28;
-   case 24:
-      return 32;
-   default:
-      throw std::invalid_argument{"word count must be 12, 15, 18, 21, or 24"};
-   }
-}
 
 std::string openssl_error_message() {
    const auto error_code = ERR_get_error();
@@ -114,7 +83,7 @@ std::vector<std::string> load_wordlist(const std::string& filename) {
 
    // Eleven bits can address exactly 2048 entries. A list of any other
    // size cannot be indexed according to BIP-39.
-   if (words.size() != bip39_wordlist_size) {
+   if (words.size() != bip39::wordlist_size) {
       throw std::runtime_error{
          "wordlist must contain exactly 2048 words; found " +
          std::to_string(words.size())};
@@ -161,24 +130,6 @@ Bytes generate_system_entropy(std::size_t byte_count) {
    }
 
    return entropy;
-}
-
-Digest sha256(const Bytes& data) {
-   Digest digest{};
-   unsigned int digest_length{};
-
-   // BIP-39 computes SHA-256 over the original entropy. The first ENT / 32
-   // bits of this digest become the mnemonic checksum.
-   if (EVP_Digest(data.data(), data.size(), digest.data(), &digest_length,
-                  EVP_sha256(), nullptr) != 1) {
-      throw std::runtime_error{"SHA-256 failed: " + openssl_error_message()};
-   }
-
-   if (digest_length != digest.size()) {
-      throw std::runtime_error{"SHA-256 returned an unexpected length"};
-   }
-
-   return digest;
 }
 
 std::size_t dice_roll_count_for_entropy(std::size_t byte_count) {
@@ -240,7 +191,8 @@ Bytes generate_dice_entropy(std::size_t byte_count) {
              << "Enter each die result as a number from 1 through 6.\n\n";
 
    Bytes conditioner_input;
-   conditioner_input.reserve(domain.size() + 4U + roll_count + sha256_size);
+   conditioner_input.reserve(domain.size() + 4U + roll_count +
+                             bip39::sha256_size);
 
    conditioner_input.insert(conditioner_input.end(), domain.begin(),
                             domain.end());
@@ -254,11 +206,11 @@ Bytes generate_dice_entropy(std::size_t byte_count) {
       conditioner_input.push_back(read_die_roll(roll_number, roll_count));
    }
 
-   const auto system_random = generate_system_entropy(sha256_size);
+   const auto system_random = generate_system_entropy(bip39::sha256_size);
    conditioner_input.insert(conditioner_input.end(), system_random.begin(),
                             system_random.end());
 
-   const auto digest = sha256(conditioner_input);
+   const auto digest = bip39::sha256(conditioner_input);
 
    Bytes entropy(byte_count);
    std::copy_n(digest.begin(), byte_count, entropy.begin());
@@ -276,64 +228,6 @@ bool read_bit(const unsigned char* bytes, std::size_t bit_position) {
    const auto shift = 7U - static_cast<unsigned int>(bit_within_byte);
 
    return ((bytes[byte_position] >> shift) & 1U) != 0;
-}
-
-std::vector<std::uint16_t> make_indices(const Bytes& entropy,
-                                        const Digest& digest,
-                                        std::size_t word_count) {
-   const auto entropy_bit_count = entropy.size() * 8;
-
-   // BIP-39 defines:
-   //
-   //   CS = ENT / 32
-   //
-   // ENT + CS is then divided into 11-bit groups.
-   const auto checksum_bit_count = entropy_bit_count / 32;
-   const auto combined_bit_count = entropy_bit_count + checksum_bit_count;
-
-   if (combined_bit_count != word_count * bits_per_word) {
-      throw std::logic_error{
-         "internal BIP-39 entropy-length calculation failed"};
-   }
-
-   std::vector<std::uint16_t> indices;
-   indices.reserve(word_count);
-
-   for (std::size_t word_number = 0; word_number < word_count; ++word_number) {
-      std::uint16_t index{};
-
-      // Each word index is formed from eleven consecutive bits.
-      //
-      // Different groups may produce the same index. Repeated words are
-      // therefore valid BIP-39 output and must not be removed.
-      for (std::size_t bit = 0; bit < bits_per_word; ++bit) {
-         const auto combined_position = word_number * bits_per_word + bit;
-
-         bool value{};
-
-         if (combined_position < entropy_bit_count) {
-            value = read_bit(entropy.data(), combined_position);
-         } else {
-            const auto checksum_position =
-               combined_position - entropy_bit_count;
-
-            value = read_bit(digest.data(), checksum_position);
-         }
-
-         index = static_cast<std::uint16_t>((index << 1U) |
-                                            static_cast<std::uint16_t>(value));
-      }
-
-      // Eleven bits can only produce values from 0 through 2047.
-      if (index >= bip39_wordlist_size) {
-         throw std::logic_error{
-            "generated index is outside the BIP-39 wordlist"};
-      }
-
-      indices.push_back(index);
-   }
-
-   return indices;
 }
 
 void print_entropy_and_checksum(const Bytes& entropy, const Digest& digest) {
@@ -395,9 +289,10 @@ void print_tiny_seed(const std::vector<std::uint16_t>& indices) {
    for (std::size_t position = 0; position < indices.size(); ++position) {
       std::cout << std::setw(6) << (position + 1) << ") ";
 
-      const std::bitset<bits_per_word> binary{indices[position]};
+      const std::bitset<bip39::bits_per_word> binary{indices[position]};
 
-      for (int bit = static_cast<int>(bits_per_word) - 1; bit >= 0; --bit) {
+      for (int bit = static_cast<int>(bip39::bits_per_word) - 1; bit >= 0;
+           --bit) {
          std::cout << (binary[static_cast<std::size_t>(bit)] ? "█ " : "_ ");
       }
 
@@ -440,7 +335,8 @@ ProgramOptions parse_command_line(int argc, char* argv[]) {
    po::notify(variables);
 
    if (!options.show_help) {
-      static_cast<void>(entropy_bytes_for_word_count(options.word_count));
+      static_cast<void>(
+         bip39::entropy_bytes_for_word_count(options.word_count));
    }
 
    return options;
@@ -458,10 +354,10 @@ int main(int argc, char* argv[]) try {
    }
 
    const auto words = options.wordlist_filename.empty()
-                         ? make_english_word_list()
+                         ? bip39::make_english_word_list()
                          : load_wordlist(options.wordlist_filename);
    const auto entropy_byte_count =
-      entropy_bytes_for_word_count(options.word_count);
+      bip39::entropy_bytes_for_word_count(options.word_count);
 
    // Report the random-number API path without exposing random bytes.
    Bytes entropy;
@@ -478,8 +374,9 @@ int main(int argc, char* argv[]) try {
       entropy = generate_system_entropy(entropy_byte_count);
    }
 
-   const auto digest = sha256(entropy);
-   const auto indices = make_indices(entropy, digest, options.word_count);
+   const auto digest = bip39::sha256(entropy);
+   const auto indices =
+      bip39::make_indices(entropy, digest, options.word_count);
 
    if (options.show_entropy) {
       print_entropy_and_checksum(entropy, digest);
