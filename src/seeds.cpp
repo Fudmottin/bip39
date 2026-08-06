@@ -1,32 +1,38 @@
 // src/seeds.cpp
 
-#include "bip39.hpp"
-
 #include <boost/program_options.hpp>
-
-#include <openssl/err.h>
-#include <openssl/rand.h>
 
 #include <algorithm>
 #include <array>
 #include <bitset>
+#include <cerrno>
+#include <csignal>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <openssl/crypto.h>
+#include <openssl/err.h>
+#include <openssl/rand.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <termios.h>
+#include <unistd.h>
 #include <unordered_set>
 #include <utility>
 #include <vector>
+
+#include "bip39.hpp"
 
 namespace {
 
 using bip39::Bytes;
 using bip39::Digest;
+using bip39::Seed;
 
 namespace po = boost::program_options;
 
@@ -36,13 +42,119 @@ struct ProgramOptions {
       , word_count{12}
       , show_entropy{false}
       , show_help{false}
+      , show_seed{false}
       , use_dice{false} {}
 
    std::string wordlist_filename;
    std::size_t word_count;
    bool show_entropy;
    bool show_help;
+   bool show_seed;
    bool use_dice;
+};
+
+class SensitiveString {
+ public:
+   SensitiveString() = default;
+   SensitiveString(const SensitiveString&) = delete;
+   SensitiveString& operator=(const SensitiveString&) = delete;
+   SensitiveString(SensitiveString&&) = delete;
+   SensitiveString& operator=(SensitiveString&&) = delete;
+
+   ~SensitiveString() { OPENSSL_cleanse(value_.data(), value_.size()); }
+
+   std::string& value() { return value_; }
+   const std::string& value() const { return value_; }
+
+ private:
+   std::string value_;
+};
+
+volatile std::sig_atomic_t caught_signal{};
+
+void remember_signal(int signal_number) { caught_signal = signal_number; }
+
+class SignalGuard {
+ public:
+   SignalGuard() {
+      caught_signal = 0;
+
+      struct sigaction action{};
+      action.sa_handler = remember_signal;
+      sigemptyset(&action.sa_mask);
+      action.sa_flags = 0;
+
+      for (std::size_t index = 0; index < signals_.size(); ++index) {
+         if (::sigaction(signals_[index], &action, &original_[index]) == -1) {
+            const auto error = errno;
+            restore();
+            throw std::system_error{error, std::generic_category(),
+                                    "could not install signal handler"};
+         }
+
+         ++installed_;
+      }
+   }
+
+   SignalGuard(const SignalGuard&) = delete;
+   SignalGuard& operator=(const SignalGuard&) = delete;
+
+   ~SignalGuard() { restore(); }
+
+   int signal_number() const { return caught_signal; }
+
+ private:
+   void restore() noexcept {
+      while (installed_ != 0) {
+         --installed_;
+         static_cast<void>(
+            ::sigaction(signals_[installed_], &original_[installed_], nullptr));
+      }
+   }
+
+   static constexpr std::array<int, 4> signals_{SIGINT, SIGTERM, SIGHUP,
+                                                SIGQUIT};
+   std::array<struct sigaction, signals_.size()> original_{};
+   std::size_t installed_{};
+};
+
+class TerminalEchoGuard {
+ public:
+   TerminalEchoGuard() {
+      if (::isatty(STDIN_FILENO) != 1) {
+         throw std::runtime_error{
+            "passphrase input requires an interactive terminal"};
+      }
+
+      if (::tcgetattr(STDIN_FILENO, &original_) == -1) {
+         throw std::system_error{errno, std::generic_category(),
+                                 "could not read terminal settings"};
+      }
+
+      auto hidden = original_;
+      const auto echo_flags = static_cast<tcflag_t>(ECHO | ECHONL);
+      hidden.c_lflag &= static_cast<tcflag_t>(~echo_flags);
+
+      if (::tcsetattr(STDIN_FILENO, TCSAFLUSH, &hidden) == -1) {
+         throw std::system_error{errno, std::generic_category(),
+                                 "could not disable terminal echo"};
+      }
+
+      restore_ = true;
+   }
+
+   TerminalEchoGuard(const TerminalEchoGuard&) = delete;
+   TerminalEchoGuard& operator=(const TerminalEchoGuard&) = delete;
+
+   ~TerminalEchoGuard() {
+      if (restore_) {
+         static_cast<void>(::tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_));
+      }
+   }
+
+ private:
+   termios original_{};
+   bool restore_{false};
 };
 
 std::string openssl_error_message() {
@@ -264,6 +376,21 @@ void print_entropy_and_checksum(const Bytes& entropy, const Digest& digest) {
              << "Checksum bits: " << checksum_bit_count << '\n';
 }
 
+std::string make_mnemonic(const std::vector<std::string>& words,
+                          const std::vector<std::uint16_t>& indices) {
+   std::string mnemonic;
+
+   for (std::size_t position = 0; position < indices.size(); ++position) {
+      if (position != 0) {
+         mnemonic += ' ';
+      }
+
+      mnemonic += words[indices[position]];
+   }
+
+   return mnemonic;
+}
+
 void print_mnemonic(const std::vector<std::string>& words,
                     const std::vector<std::uint16_t>& indices) {
    std::cout << "\n    Seed Words\n\n";
@@ -300,6 +427,99 @@ void print_tiny_seed(const std::vector<std::uint16_t>& indices) {
    }
 }
 
+void read_hidden_line(std::string_view prompt, SensitiveString& text) {
+   std::cout << prompt << std::flush;
+
+   std::string input;
+   int signal_number{};
+
+   {
+      SignalGuard signal_guard;
+      TerminalEchoGuard echo_guard;
+      std::array<char, 256> buffer{};
+
+      for (;;) {
+         const auto byte_count =
+            ::read(STDIN_FILENO, buffer.data(), buffer.size());
+
+         if (byte_count > 0) {
+            input.append(buffer.data(), static_cast<std::size_t>(byte_count));
+
+            if (!input.empty() && input.back() == '\n') {
+               input.pop_back();
+
+               if (!input.empty() && input.back() == '\r') {
+                  input.pop_back();
+               }
+
+               break;
+            }
+
+            continue;
+         }
+
+         if (byte_count == 0) {
+            throw std::runtime_error{"input ended while reading passphrase"};
+         }
+
+         if (errno == EINTR) {
+            signal_number = signal_guard.signal_number();
+
+            if (signal_number != 0) {
+               break;
+            }
+
+            continue;
+         }
+
+         throw std::system_error{errno, std::generic_category(),
+                                 "could not read passphrase"};
+      }
+   }
+
+   std::cout << '\n';
+
+   if (signal_number != 0) {
+      static_cast<void>(std::raise(signal_number));
+      throw std::runtime_error{"passphrase entry interrupted"};
+   }
+
+   text.value() = std::move(input);
+}
+
+void read_passphrase(SensitiveString& passphrase) {
+   read_hidden_line("BIP-39 passphrase (empty for none): ", passphrase);
+
+   if (passphrase.value().empty()) {
+      return;
+   }
+
+   SensitiveString confirmation;
+   read_hidden_line("Confirm passphrase: ", confirmation);
+
+   if (passphrase.value() != confirmation.value()) {
+      throw std::invalid_argument{"passphrases do not match"};
+   }
+}
+
+void print_seed_derivation(std::string_view mnemonic, bool has_passphrase,
+                           const Seed& seed) {
+   std::cout << "\n    BIP-39 Derivation\n\n"
+             << "Mnemonic:   " << mnemonic << '\n'
+             << "Passphrase: "
+             << (has_passphrase ? "set (not displayed)" : "empty") << '\n'
+             << "Seed:       ";
+
+   for (const auto byte : seed) {
+      std::cout << std::hex << std::setw(2) << std::setfill('0')
+                << static_cast<unsigned int>(byte);
+   }
+
+   std::cout << std::dec << std::setfill(' ') << '\n'
+             << "Warning: the mnemonic and seed are secret wallet material.\n"
+             << "Terminal scrollback, logs, and screenshots may retain them.\n";
+}
+
 void add_command_line_options(po::options_description& description,
                               ProgramOptions& options) {
    description.add_options()("help,h", po::bool_switch(&options.show_help),
@@ -311,7 +531,9 @@ void add_command_line_options(po::options_description& description,
       "dice,d", po::bool_switch(&options.use_dice),
       "interactively mix dice rolls with OpenSSL private randomness")(
       "show-entropy,e", po::bool_switch(&options.show_entropy),
-      "display the entropy and checksum");
+      "display the entropy and checksum")(
+      "show-seed", po::bool_switch(&options.show_seed),
+      "derive and display the BIP-39 seed; prompts for passphrase");
 }
 
 void print_help(const std::string& program_name) {
@@ -377,6 +599,7 @@ int main(int argc, char* argv[]) try {
    const auto digest = bip39::sha256(entropy);
    const auto indices =
       bip39::make_indices(entropy, digest, options.word_count);
+   const auto mnemonic = make_mnemonic(words, indices);
 
    if (options.show_entropy) {
       print_entropy_and_checksum(entropy, digest);
@@ -384,6 +607,15 @@ int main(int argc, char* argv[]) try {
 
    print_mnemonic(words, indices);
    print_tiny_seed(indices);
+
+   if (options.show_seed) {
+      SensitiveString passphrase;
+      read_passphrase(passphrase);
+
+      auto seed = bip39::derive_seed(mnemonic, passphrase.value());
+      print_seed_derivation(mnemonic, !passphrase.value().empty(), seed);
+      OPENSSL_cleanse(seed.data(), seed.size());
+   }
 
    std::cout << '\n';
 

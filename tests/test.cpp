@@ -5,7 +5,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -102,6 +104,58 @@ constexpr std::array<TestVector, 24> test_vectors{{
     "involve unfold"},
 }};
 
+// The BIP-39 reference vectors use the passphrase "TREZOR".
+constexpr std::array<std::string_view, 24> expected_seeds{{
+   "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e5349553"
+   "1f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04",
+   "2e8905819b8723fe2c1d161860e5ee1830318dbf49a83bd451cfb8440c28bd6f"
+   "a457fe1296106559a3c80937a1c1069be3a3a5bd381ee6260e8d9739fce1f607",
+   "d71de856f81a8acc65e6fc851a38d4d7ec216fd0796d0a6827a3ad6ed5511a30"
+   "fa280f12eb2e47ed2ac03b5c462a0358d18d69fe4f985ec81778c1b370b652a8",
+   "ac27495480225222079d7be181583751e86f571027b0497b5b5d11218e0a8a13"
+   "332572917f0f8e5a589620c6f15b11c61dee327651a14c34e18231052e48c069",
+   "035895f2f481b1b0f01fcf8c289c794660b289981a78f8106447707fdd9666ca"
+   "06da5a9a565181599b79f53b844d8a71dd9f439c52a3d7b3e8a79c906ac845fa",
+   "f2b94508732bcbacbcc020faefecfc89feafa6649a5491b8c952cede496c214a0"
+   "c7b3c392d168748f2d4a612bada0753b52a1c7ac53c1e93abd5c6320b9e95dd",
+   "107d7c02a5aa6f38c58083ff74f04c607c2d2c0ecc55501dadd72d025b751bc2"
+   "7fe913ffb796f841c49b1d33b610cf0e91d3aa239027f5e99fe4ce9e5088cd65",
+   "0cd6e5d827bb62eb8fc1e262254223817fd068a74b5b449cc2f667c3f1f985a7"
+   "6379b43348d952e2265b4cd129090758b3e3c2c49103b5051aac2eaeb890a528",
+   "bda85446c68413707090a52022edd26a1c9462295029f2e60cd7c4f2bbd30971"
+   "70af7a4d73245cafa9c3cca8d561a7c3de6f5d4a10be8ed2a5e608d68f92fcc8",
+   "bc09fca1804f7e69da93c2f2028eb238c227f2e9dda30cd63699232578480a40"
+   "21b146ad717fbb7e451ce9eb835f43620bf5c514db0f8add49f5d121449d3e87",
+   "c0c519bd0e91a2ed54357d9d1ebef6f5af218a153624cf4f2da911a0ed8f7a0"
+   "9e2ef61af0aca007096df430022f7a2b6fb91661a9589097069720d015e4e982f",
+   "dd48c104698c30cfe2b6142103248622fb7bb0ff692eebb00089b32d22484e16"
+   "13912f0a5b694407be899ffd31ed3992c456cdf60f5d4564b8ba3f05a69890ad",
+   "274ddc525802f7c828d8ef7ddbcdc5304e87ac3535913611fbbfa986d0c9e547"
+   "6c91689f9c8a54fd55bd38606aa6a8595ad213d4c9c9f9aca3fb217069a41028",
+   "628c3827a8823298ee685db84f55caa34b5cc195a778e52d45f59bcf75aba68"
+   "e4d7590e101dc414bc1bbd5737666fbbef35d1f1903953b66624f910feef245ac",
+   "64c87cde7e12ecf6704ab95bb1408bef047c22db4cc7491c4271d170a1b213d2"
+   "0b385bc1588d9c7b38f1b39d415665b8a9030c9ec653d75e65f847d8fc1fc440",
+   "ea725895aaae8d4c1cf682c1bfd2d358d52ed9f0f0591131b559e2724bb234fc"
+   "a05aa9c02c57407e04ee9dc3b454aa63fbff483a8b11de949624b9f1831a9612",
+   "fd579828af3da1d32544ce4db5c73d53fc8acc4ddb1e3b251a31179cdb71e853"
+   "c56d2fcb11aed39898ce6c34b10b5382772db8796e52837b54468aeb312cfc3d",
+   "72be8e052fc4919d2adf28d5306b5474b0069df35b02303de8c1729c9538dbb6"
+   "fc2d731d5f832193cd9fb6aeecbc469594a70e3dd50811b5067f3b88b28c3e8d",
+   "deb5f45449e615feff5640f2e49f933ff51895de3b4381832b3139941c57b592"
+   "05a42480c52175b6efcffaa58a2503887c1e8b363a707256bdd2b587b46541f5",
+   "4cbdff1ca2db800fd61cae72a57475fdc6bab03e441fd63f96dabd1f183ef5b7"
+   "82925f00105f318309a7e9c3ea6967c7801e46c8a58082674c860a37b93eda02",
+   "26e975ec644423f4a4c4f4215ef09b4bd7ef924e85d1d17c4cf3f136c2863cf"
+   "6df0a475045652c57eb5fb41513ca2a2d67722b77e954b4b3fc11f7590449191d",
+   "2aaa9242daafcee6aa9d7269f17d4efe271e1b9a529178d7dc139cd18747090b"
+   "f9d60295d0ce74309a78852a9caadf0af48aae1c6253839624076224374bc63f",
+   "7b4a10be9d98e6cba265566db7f136718e1398c71cb581e1b2f464cac1ceedf4"
+   "f3e274dc270003c670ad8d02c4558b2f8e39edea2775c9e232c7cb798b069e88",
+   "01f5bced59dec48e362f2c45b5de68b9fd6c92c6634f44d6d40aab69056506f"
+   "0e35524a518034ddc1192e1dacd32c1ed3eaa3c3b131c88ed8e7e54c49a5d0998",
+}};
+
 unsigned char hex_value(char digit) {
    if (digit >= '0' && digit <= '9') {
       return static_cast<unsigned char>(digit - '0');
@@ -118,7 +172,8 @@ unsigned char hex_value(char digit) {
 
 bip39::Bytes bytes_from_hex(std::string_view text) {
    if (text.size() % 2 != 0) {
-      throw std::invalid_argument{"hexadecimal entropy must contain whole bytes"};
+      throw std::invalid_argument{
+         "hexadecimal entropy must contain whole bytes"};
    }
 
    bip39::Bytes bytes;
@@ -131,6 +186,18 @@ bip39::Bytes bytes_from_hex(std::string_view text) {
    }
 
    return bytes;
+}
+
+template<typename Range>
+std::string bytes_to_hex(const Range& bytes) {
+   std::ostringstream output;
+
+   for (const auto byte : bytes) {
+      output << std::hex << std::setw(2) << std::setfill('0')
+             << static_cast<unsigned int>(byte);
+   }
+
+   return output.str();
 }
 
 std::size_t count_words(std::string_view mnemonic) {
@@ -156,15 +223,16 @@ std::string make_mnemonic(const std::vector<std::string>& words,
    return mnemonic;
 }
 
-template <typename Function>
-bool expect_invalid_argument(std::string_view description, Function&& function) {
+template<typename Function>
+bool expect_invalid_argument(std::string_view description,
+                             Function&& function) {
    try {
       std::forward<Function>(function)();
    } catch (const std::invalid_argument&) {
       return true;
    } catch (const std::exception& error) {
-      std::cerr << description << " threw the wrong exception: "
-                << error.what() << '\n';
+      std::cerr << description << " threw the wrong exception: " << error.what()
+                << '\n';
       return false;
    } catch (...) {
       std::cerr << description << " threw a non-standard exception\n";
@@ -224,8 +292,7 @@ bool test_unsupported_word_counts() {
          std::to_string(word_count);
 
       if (!expect_invalid_argument(mapping_description, [word_count] {
-             static_cast<void>(
-                bip39::entropy_bytes_for_word_count(word_count));
+             static_cast<void>(bip39::entropy_bytes_for_word_count(word_count));
           })) {
          passed = false;
       }
@@ -235,11 +302,11 @@ bool test_unsupported_word_counts() {
          "index generation for unsupported word count " +
          std::to_string(word_count);
 
-      if (!expect_invalid_argument(
-             indices_description, [&entropy, &digest, word_count] {
-                static_cast<void>(
-                   bip39::make_indices(entropy, digest, word_count));
-             })) {
+      if (!expect_invalid_argument(indices_description, [&entropy, &digest,
+                                                         word_count] {
+             static_cast<void>(
+                bip39::make_indices(entropy, digest, word_count));
+          })) {
          passed = false;
       }
    }
@@ -271,11 +338,11 @@ bool test_invalid_entropy_sizes() {
             "index generation for " + std::to_string(byte_count) +
             " entropy bytes and " + std::to_string(word_count) + " words";
 
-         if (!expect_invalid_argument(
-                description, [&entropy, &digest, word_count] {
-                   static_cast<void>(
-                      bip39::make_indices(entropy, digest, word_count));
-                })) {
+         if (!expect_invalid_argument(description, [&entropy, &digest,
+                                                    word_count] {
+                static_cast<void>(
+                   bip39::make_indices(entropy, digest, word_count));
+             })) {
             passed = false;
          }
       }
@@ -284,30 +351,83 @@ bool test_invalid_entropy_sizes() {
    return passed;
 }
 
-bool test_vector(std::size_t number,
-                 const TestVector& vector,
+bool test_seed_input_validation() {
+   bool passed{true};
+   std::string non_ascii_mnemonic{"abandon"};
+   non_ascii_mnemonic.push_back(static_cast<char>(0x80));
+
+   if (!expect_invalid_argument("non-ASCII mnemonic", [&non_ascii_mnemonic] {
+          static_cast<void>(bip39::derive_seed(non_ascii_mnemonic));
+       })) {
+      passed = false;
+   }
+
+   std::string non_ascii_passphrase;
+   non_ascii_passphrase.push_back(static_cast<char>(0x80));
+
+   if (!expect_invalid_argument(
+          "non-ASCII passphrase", [&non_ascii_passphrase] {
+             static_cast<void>(bip39::derive_seed(test_vectors.front().mnemonic,
+                                                  non_ascii_passphrase));
+          })) {
+      passed = false;
+   }
+
+   constexpr std::string_view expected_empty_passphrase_seed{
+      "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc1"
+      "9a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4"};
+   const auto empty_passphrase_seed =
+      bip39::derive_seed(test_vectors.front().mnemonic);
+
+   if (bytes_to_hex(empty_passphrase_seed) != expected_empty_passphrase_seed) {
+      std::cerr << "empty-passphrase seed vector failed\n";
+      passed = false;
+   }
+
+   if (empty_passphrase_seed ==
+       bip39::derive_seed(test_vectors.front().mnemonic, "TREZOR")) {
+      std::cerr << "different passphrases produced the same seed\n";
+      passed = false;
+   }
+
+   return passed;
+}
+
+bool test_vector(std::size_t number, const TestVector& vector,
                  const std::vector<std::string>& words) {
    const auto entropy = bytes_from_hex(vector.entropy_hex);
    const auto expected_word_count = count_words(vector.mnemonic);
    const auto digest = bip39::sha256(entropy);
-   const auto indices = bip39::make_indices(entropy, digest, expected_word_count);
+   const auto indices =
+      bip39::make_indices(entropy, digest, expected_word_count);
    const auto actual = make_mnemonic(words, indices);
 
-   if (bip39::entropy_bytes_for_word_count(expected_word_count) != entropy.size()) {
+   if (bip39::entropy_bytes_for_word_count(expected_word_count) !=
+       entropy.size()) {
       std::cerr << "vector " << number
                 << " has inconsistent entropy and mnemonic lengths\n";
       return false;
    }
 
-   if (actual == vector.mnemonic) {
-      return true;
+   if (actual != vector.mnemonic) {
+      std::cerr << "mnemonic vector " << number << " failed\n"
+                << "entropy: " << vector.entropy_hex << '\n'
+                << "expected: " << vector.mnemonic << '\n'
+                << "actual:   " << actual << '\n';
+      return false;
    }
 
-   std::cerr << "vector " << number << " failed\n"
-             << "entropy: " << vector.entropy_hex << '\n'
-             << "expected: " << vector.mnemonic << '\n'
-             << "actual:   " << actual << '\n';
-   return false;
+   const auto actual_seed = bip39::derive_seed(vector.mnemonic, "TREZOR");
+   const auto actual_seed_hex = bytes_to_hex(actual_seed);
+
+   if (actual_seed_hex != expected_seeds[number - 1]) {
+      std::cerr << "seed vector " << number << " failed\n"
+                << "expected: " << expected_seeds[number - 1] << '\n'
+                << "actual:   " << actual_seed_hex << '\n';
+      return false;
+   }
+
+   return true;
 }
 } // namespace
 
@@ -323,6 +443,10 @@ int main() try {
    }
 
    if (!test_invalid_entropy_sizes()) {
+      ++failure_count;
+   }
+
+   if (!test_seed_input_validation()) {
       ++failure_count;
    }
 
@@ -344,8 +468,9 @@ int main() try {
    }
 
    std::cout << test_vectors.size()
-             << " BIP-39 English mnemonic vectors passed\n"
-             << "BIP-39 input validation passed\n";
+             << " BIP-39 English mnemonic and seed vectors passed\n"
+             << "BIP-39 input validation passed\n"
+             << "BIP-39 ASCII seed derivation passed\n";
    return 0;
 } catch (const std::exception& error) {
    std::cerr << "test error: " << error.what() << '\n';

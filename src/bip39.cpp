@@ -2,12 +2,14 @@
 
 #include "bip39.hpp"
 
+#include <algorithm>
+#include <array>
+#include <limits>
 #include <openssl/err.h>
 #include <openssl/evp.h>
-
-#include <array>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // english_words.cpp currently provides this generated data function in the
@@ -17,6 +19,8 @@ std::vector<std::string> make_english_word_list();
 
 namespace bip39 {
 namespace {
+
+constexpr int pbkdf2_iterations{2048};
 
 std::string openssl_error_message() {
    const auto error_code = ERR_get_error();
@@ -29,6 +33,28 @@ std::string openssl_error_message() {
    ERR_error_string_n(error_code, buffer.data(), buffer.size());
 
    return buffer.data();
+}
+
+int checked_int(std::size_t size) {
+   constexpr auto maximum =
+      static_cast<std::size_t>(std::numeric_limits<int>::max());
+
+   if (size > maximum) {
+      throw std::length_error{"BIP-39 input is too large"};
+   }
+
+   return static_cast<int>(size);
+}
+
+void require_ascii(std::string_view text, std::string_view description) {
+   const auto is_ascii = [](char character) {
+      return static_cast<unsigned char>(character) <= 0x7fU;
+   };
+
+   if (!std::all_of(text.begin(), text.end(), is_ascii)) {
+      throw std::invalid_argument{std::string{description} +
+                                  " must contain ASCII characters only"};
+   }
 }
 
 // Read one bit with the most significant bit of the first byte first.
@@ -121,8 +147,8 @@ std::vector<std::uint16_t> make_indices(const Bytes& entropy,
             value = read_bit(digest.data(), checksum_position);
          }
 
-         index = static_cast<std::uint16_t>(
-            (index << 1U) | static_cast<std::uint16_t>(value));
+         index = static_cast<std::uint16_t>((index << 1U) |
+                                            static_cast<std::uint16_t>(value));
       }
 
       // Eleven bits can only produce values from 0 through 2047.
@@ -135,6 +161,28 @@ std::vector<std::uint16_t> make_indices(const Bytes& entropy,
    }
 
    return indices;
+}
+
+Seed derive_seed(std::string_view mnemonic, std::string_view passphrase) {
+   require_ascii(mnemonic, "mnemonic");
+   require_ascii(passphrase, "passphrase");
+
+   std::string salt{"mnemonic"};
+   salt.append(passphrase.begin(), passphrase.end());
+
+   Seed seed{};
+   const auto* password = mnemonic.empty() ? "" : mnemonic.data();
+
+   if (PKCS5_PBKDF2_HMAC(password, checked_int(mnemonic.size()),
+                         reinterpret_cast<const unsigned char*>(salt.data()),
+                         checked_int(salt.size()), pbkdf2_iterations,
+                         EVP_sha512(), checked_int(seed.size()),
+                         seed.data()) != 1) {
+      throw std::runtime_error{"PBKDF2-HMAC-SHA512 failed: " +
+                               openssl_error_message()};
+   }
+
+   return seed;
 }
 
 std::vector<std::string> make_english_word_list() {
