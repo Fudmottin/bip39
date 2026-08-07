@@ -43,7 +43,9 @@ struct ProgramOptions {
       , show_help{false}
       , show_seed{false}
       , use_dice{false}
-      , use_dice_only{false} {}
+      , use_dice_only{false}
+      , use_cards{false}
+      , use_cards_only{false} {}
 
    std::string wordlist_filename;
    std::size_t word_count;
@@ -52,6 +54,8 @@ struct ProgramOptions {
    bool show_seed;
    bool use_dice;
    bool use_dice_only;
+   bool use_cards;
+   bool use_cards_only;
 };
 
 class SensitiveString {
@@ -318,6 +322,89 @@ Bytes generate_dice_only_entropy(std::size_t byte_count) {
    return entropy::dice_only_entropy(rolls, byte_count);
 }
 
+void print_card_entry_instructions() {
+   std::cout
+      << "Enter one card at a time from the top of the deck to the bottom.\n"
+      << "Ranks: a, 2 through 10, j, q, k. Suits: c, d, h, s.\n"
+      << "Examples: as, 10d, qh. The letter t may be used for ten.\n"
+      << "Card names are case-insensitive.\n\n";
+}
+
+std::string read_card_deck(std::size_t shuffle_number) {
+   std::string deck;
+   deck.reserve(entropy::canonical_deck_size);
+
+   std::unordered_set<std::string> seen;
+   seen.reserve(entropy::cards_per_deck);
+
+   for (std::size_t position = 1; position <= entropy::cards_per_deck;) {
+      std::cout << "Shuffle " << shuffle_number << ", card " << position << '/'
+                << entropy::cards_per_deck << ": " << std::flush;
+
+      std::string input;
+      if (!std::getline(std::cin, input)) {
+         throw std::runtime_error{"input ended before all cards were entered"};
+      }
+
+      try {
+         auto card = entropy::normalize_card(input);
+
+         if (!seen.insert(card).second) {
+            std::cerr << "Duplicate card: " << card
+                      << ". Enter a different card.\n";
+            continue;
+         }
+
+         deck += card;
+         ++position;
+      } catch (const std::invalid_argument& error) {
+         std::cerr << error.what() << '\n';
+      }
+   }
+
+   return deck;
+}
+
+Bytes generate_mixed_card_entropy(std::size_t byte_count) {
+   const auto entropy_bit_count = byte_count * 8U;
+
+   std::cout << "Cards mode requires one shuffled 52-card deck for "
+             << entropy_bit_count << " bits of BIP-39 entropy.\n"
+             << "This mode mixes the deck ordering with 32 bytes of OpenSSL "
+                "randomness.\n";
+   print_card_entry_instructions();
+
+   const auto deck = read_card_deck(1);
+   const auto system_random = generate_system_entropy(bip39::sha256_size);
+   return entropy::mix_card_entropy(deck, system_random, byte_count);
+}
+
+Bytes generate_cards_only_entropy(std::size_t byte_count) {
+   const auto entropy_bit_count = byte_count * 8U;
+   const auto deck_count = entropy::cards_only_deck_count(byte_count);
+
+   std::cout << "Cards-only mode requires " << deck_count
+             << (deck_count == 1 ? " shuffled deck" : " independent shuffles")
+             << " for " << entropy_bit_count << " bits of BIP-39 entropy.\n"
+             << "This mode does not mix OpenSSL randomness.\n";
+   print_card_entry_instructions();
+
+   const auto first_deck = read_card_deck(1);
+
+   if (deck_count == 1) {
+      return entropy::cards_only_entropy(first_deck, {}, byte_count);
+   }
+
+   std::cout
+      << "\nA single shuffled deck cannot supply 256 bits of card-only "
+         "entropy.\n"
+      << "Restore the deck to canonical order, perform a fresh shuffle,\n"
+      << "then enter the second ordering from top to bottom.\n\n";
+
+   const auto second_deck = read_card_deck(2);
+   return entropy::cards_only_entropy(first_deck, second_deck, byte_count);
+}
+
 // Read one bit with the most significant bit of the first byte first.
 //
 // BIP-39 treats entropy and checksum as one continuous bit sequence in this
@@ -520,6 +607,10 @@ void add_command_line_options(po::options_description& description,
       "interactively mix dice rolls with OpenSSL private randomness")(
       "dice-only", po::bool_switch(&options.use_dice_only),
       "use only SHA-256 of ASCII dice rolls for compatibility")(
+      "cards", po::bool_switch(&options.use_cards),
+      "mix one shuffled card deck with OpenSSL private randomness")(
+      "cards-only", po::bool_switch(&options.use_cards_only),
+      "use only shuffled card orderings; two shuffles for 24 words")(
       "show-entropy,e", po::bool_switch(&options.show_entropy),
       "display the entropy and checksum")(
       "show-seed", po::bool_switch(&options.show_seed),
@@ -547,9 +638,18 @@ ProgramOptions parse_command_line(int argc, char* argv[]) {
    po::notify(variables);
 
    if (!options.show_help) {
-      if (options.use_dice && options.use_dice_only) {
+      const std::array entropy_sources{
+         options.use_dice,
+         options.use_dice_only,
+         options.use_cards,
+         options.use_cards_only,
+      };
+
+      if (std::count(entropy_sources.begin(), entropy_sources.end(), true) >
+          1) {
          throw std::invalid_argument{
-            "--dice and --dice-only are mutually exclusive"};
+            "--dice, --dice-only, --cards, and --cards-only are mutually "
+            "exclusive"};
       }
 
       static_cast<void>(
@@ -579,7 +679,17 @@ int main(int argc, char* argv[]) try {
    // Report the random-number API path without exposing random bytes.
    Bytes entropy;
 
-   if (options.use_dice_only) {
+   if (options.use_cards_only) {
+      std::cerr << "Entropy path: SHA-256(canonical card ordering), no system "
+                   "randomness\n";
+
+      entropy = generate_cards_only_entropy(entropy_byte_count);
+   } else if (options.use_cards) {
+      std::cerr
+         << "Entropy path: SHA-256(card ordering || RAND_priv_bytes())\n";
+
+      entropy = generate_mixed_card_entropy(entropy_byte_count);
+   } else if (options.use_dice_only) {
       std::cerr
          << "Entropy path: SHA-256(ASCII dice rolls), no system randomness\n";
 

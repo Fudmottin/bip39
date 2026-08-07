@@ -502,6 +502,170 @@ bool test_dice_entropy(const std::vector<std::string>& words) {
    return passed;
 }
 
+std::string make_ordered_deck() {
+   constexpr std::string_view ranks{"a23456789tjqk"};
+   constexpr std::string_view suits{"cdhs"};
+
+   std::string deck;
+   deck.reserve(entropy::canonical_deck_size);
+
+   for (const auto suit : suits) {
+      for (const auto rank : ranks) {
+         deck += rank;
+         deck += suit;
+      }
+   }
+
+   return deck;
+}
+
+std::string reverse_deck(std::string_view deck) {
+   std::string reversed;
+   reversed.reserve(deck.size());
+
+   for (std::size_t offset = deck.size(); offset != 0;
+        offset -= entropy::canonical_card_size) {
+      reversed.append(deck.substr(offset - entropy::canonical_card_size,
+                                  entropy::canonical_card_size));
+   }
+
+   return reversed;
+}
+
+bool test_card_entropy() {
+   bool passed{true};
+
+   if (entropy::normalize_card(" AS ") != "as" ||
+       entropy::normalize_card("10D") != "td" ||
+       entropy::normalize_card("Th") != "th") {
+      std::cerr << "card-name normalization failed\n";
+      passed = false;
+   }
+
+   constexpr std::array<std::string_view, 4> invalid_cards{"1s", "11s", "xz",
+                                                           "ace of spades"};
+
+   for (const auto card : invalid_cards) {
+      if (!expect_invalid_argument("invalid card name " + std::string{card},
+                                   [card] {
+                                      static_cast<void>(
+                                         entropy::normalize_card(card));
+                                   })) {
+         passed = false;
+      }
+   }
+
+   constexpr std::array<std::pair<std::size_t, std::size_t>, 5> deck_counts{{
+      {16, 1},
+      {20, 1},
+      {24, 1},
+      {28, 1},
+      {32, 2},
+   }};
+
+   for (const auto& [byte_count, expected_decks] : deck_counts) {
+      if (entropy::cards_only_deck_count(byte_count) != expected_decks) {
+         std::cerr << "cards-only deck-count mapping failed for " << byte_count
+                   << " entropy bytes\n";
+         passed = false;
+      }
+   }
+
+   const auto first_deck = make_ordered_deck();
+   const auto second_deck = reverse_deck(first_deck);
+
+   bip39::Bytes system_random(bip39::sha256_size);
+   for (std::size_t index = 0; index < system_random.size(); ++index) {
+      system_random[index] = static_cast<unsigned char>(index);
+   }
+
+   constexpr std::string_view expected_mixed_entropy{
+      "458cbab4c71fc9423e80c62e9c1633ad"};
+   const auto mixed_entropy =
+      entropy::mix_card_entropy(first_deck, system_random, 16);
+
+   if (bytes_to_hex(mixed_entropy) != expected_mixed_entropy) {
+      std::cerr << "mixed card entropy vector failed\n"
+                << "expected: " << expected_mixed_entropy << '\n'
+                << "actual:   " << bytes_to_hex(mixed_entropy) << '\n';
+      passed = false;
+   }
+
+   constexpr std::string_view expected_one_deck_entropy{
+      "8a6d032c45ea38942575103d0e032b89"};
+   const auto one_deck_entropy =
+      entropy::cards_only_entropy(first_deck, {}, 16);
+
+   if (bytes_to_hex(one_deck_entropy) != expected_one_deck_entropy) {
+      std::cerr << "one-deck card-only entropy vector failed\n"
+                << "expected: " << expected_one_deck_entropy << '\n'
+                << "actual:   " << bytes_to_hex(one_deck_entropy) << '\n';
+      passed = false;
+   }
+
+   constexpr std::string_view expected_two_deck_entropy{
+      "99151c079169ea4a0c81a3ec0f778575db2c80fa91149c6efea0600d8b341196"};
+   const auto two_deck_entropy =
+      entropy::cards_only_entropy(first_deck, second_deck, 32);
+
+   if (bytes_to_hex(two_deck_entropy) != expected_two_deck_entropy) {
+      std::cerr << "two-deck card-only entropy vector failed\n"
+                << "expected: " << expected_two_deck_entropy << '\n'
+                << "actual:   " << bytes_to_hex(two_deck_entropy) << '\n';
+      passed = false;
+   }
+
+   auto duplicate_deck = first_deck;
+   duplicate_deck.replace(duplicate_deck.size() - entropy::canonical_card_size,
+                          entropy::canonical_card_size,
+                          duplicate_deck.substr(0,
+                                                entropy::canonical_card_size));
+
+   if (!expect_invalid_argument("duplicate card in canonical deck",
+                                [&duplicate_deck, &system_random] {
+                                   static_cast<void>(entropy::mix_card_entropy(
+                                      duplicate_deck, system_random, 16));
+                                })) {
+      passed = false;
+   }
+
+   if (!expect_invalid_argument(
+          "one deck for 256-bit card-only entropy", [&first_deck] {
+             static_cast<void>(entropy::cards_only_entropy(first_deck, {}, 32));
+          })) {
+      passed = false;
+   }
+
+   if (!expect_invalid_argument("second deck for shorter card-only entropy",
+                                [&first_deck, &second_deck] {
+                                   static_cast<void>(
+                                      entropy::cards_only_entropy(first_deck,
+                                                                  second_deck,
+                                                                  16));
+                                })) {
+      passed = false;
+   }
+
+   if (!expect_invalid_argument("identical card-only shuffles", [&first_deck] {
+          static_cast<void>(
+             entropy::cards_only_entropy(first_deck, first_deck, 32));
+       })) {
+      passed = false;
+   }
+
+   const bip39::Bytes short_system_random(bip39::sha256_size - 1);
+
+   if (!expect_invalid_argument("short mixed-card system randomness",
+                                [&first_deck, &short_system_random] {
+                                   static_cast<void>(entropy::mix_card_entropy(
+                                      first_deck, short_system_random, 16));
+                                })) {
+      passed = false;
+   }
+
+   return passed;
+}
+
 bool test_vector(std::size_t number, const TestVector& vector,
                  const std::vector<std::string>& words) {
    const auto entropy = bytes_from_hex(vector.entropy_hex);
@@ -559,6 +723,10 @@ int main() try {
       ++failure_count;
    }
 
+   if (!test_card_entropy()) {
+      ++failure_count;
+   }
+
    const auto words = bip39::make_english_word_list();
    if (words.size() != bip39::wordlist_size) {
       std::cerr << "compiled English wordlist does not contain 2048 words\n";
@@ -584,7 +752,8 @@ int main() try {
              << " BIP-39 English mnemonic and seed vectors passed\n"
              << "BIP-39 input validation passed\n"
              << "BIP-39 ASCII seed derivation passed\n"
-             << "Dice entropy derivation passed\n";
+             << "Dice entropy derivation passed\n"
+             << "Card entropy derivation passed\n";
    return 0;
 } catch (const std::exception& error) {
    std::cerr << "test error: " << error.what() << '\n';
