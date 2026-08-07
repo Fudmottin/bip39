@@ -1,478 +1,502 @@
-# BIP-39 Mnemonic Generator
+BIP-39 Mnemonic Generator
 
-> [!CAUTION]
-> This is an educational project. It has not been independently audited and should not be trusted to protect real funds.
->
-> A mnemonic and its source entropy are secret wallet recovery material. Terminal output, scrollback, screenshots, shell recordings, logs, redirected output, and backups may retain them.
->
-> Generate real wallet material only on a trusted and preferably offline computer. The `--show-entropy` option deliberately exposes the entropy and should be used only for testing and study.
+[!CAUTION]This is an educational project. It has not been independently audited andshould not be trusted to protect real funds.
 
-A C++20 command-line utility that generates BIP-39 mnemonic sentences.
+Mnemonics, entropy, BIP-39 seeds, and passphrases are secret wallet recoverymaterial. Terminal output, scrollback, screenshots, shell recordings, logs,redirected output, and backups may retain them.
 
-With no arguments, the program generates a 12-word mnemonic using:
+Generate real wallet material only on a trusted and preferably offlinecomputer. Review the source, build it yourself, and verify the tests.
 
-* the compiled-in official English BIP-39 wordlist;
-* entropy from OpenSSL `RAND_priv_bytes()`;
-* SHA-256 for the BIP-39 checksum.
+A C++20 command-line utility for generating BIP-39 mnemonic sentences andderiving their 64-byte BIP-39 seeds.
 
-Optional command-line arguments select another mnemonic length, load another wordlist, display diagnostic information, or interactively mix physical dice rolls with OpenSSL randomness.
+With no arguments, the program generates a 12-word mnemonic using the compiledofficial English wordlist and entropy from OpenSSL RAND_priv_bytes().
 
-## Scope
+Scope
 
-BIP-39 has two main operations:
+BIP-39 has two operations:
 
-1. Convert initial entropy into a mnemonic sentence.
-2. Convert the mnemonic and an optional passphrase into a 512-bit binary seed using PBKDF2-HMAC-SHA512.
+Convert initial entropy into a mnemonic sentence.
 
-This project implements the first operation only. It does not derive the 512-bit seed used by BIP-32 wallets.
+Convert the mnemonic and an optional passphrase into a 512-bit seed usingPBKDF2-HMAC-SHA512.
 
-The mnemonic calculation is:
+This project implements both operations. It does not implement BIP-32 keys,wallet derivation paths, addresses, transactions, or wallet storage.
 
-```text
+Mnemonic generation uses:
+
 CS = ENT / 32
 MS = (ENT + CS) / 11
-```
 
-Where:
+The first CS bits of SHA-256(entropy) are appended to the entropy. Thecombined bit sequence is split into 11-bit wordlist indices.
 
-* `ENT` is the initial entropy length in bits.
-* `CS` is the checksum length in bits.
-* `MS` is the mnemonic word count.
+Seed derivation uses:
 
-The first `CS` bits of `SHA-256(entropy)` are appended to the entropy. The resulting bit sequence is divided into 11-bit groups, each of which selects one entry from a 2,048-word list.
+PBKDF2-HMAC-SHA512
+password   = mnemonic
+salt       = "mnemonic" + passphrase
+iterations = 2048
+output     = 64 bytes
 
-The official specification is available from the [Bitcoin BIPs repository](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki). It is also available in the optional repository submodule at `external/bips/bip-0039.mediawiki`.
+BIP-39 requires UTF-8 NFKD normalization. This project currently accepts onlyASCII mnemonic and passphrase text for seed derivation.
 
-## Features
+See theBIP-39 specification.
 
-* Generates valid BIP-39 mnemonic lengths:
+Features
 
-  * 12 words from 128 bits of entropy
-  * 15 words from 160 bits of entropy
-  * 18 words from 192 bits of entropy
-  * 21 words from 224 bits of entropy
-  * 24 words from 256 bits of entropy
-* Uses the official English wordlist compiled into the executable by default.
-* Optionally loads a 2,048-entry wordlist from a file.
-* Uses OpenSSL `RAND_priv_bytes()` for cryptographically secure system entropy.
-* Provides an interactive dice mode that combines physical rolls with OpenSSL randomness.
-* Uses OpenSSL SHA-256 for entropy conditioning and the BIP-39 checksum.
-* Validates command-line options with Boost.Program_options.
-* Optionally displays the entropy and checksum for educational inspection.
-* Prints every mnemonic word and its zero-based 11-bit wordlist index.
-* Builds as a C++20 program with CMake.
+Generates 12, 15, 18, 21, or 24-word BIP-39 mnemonics.
 
-## Requirements
+Uses the compiled official English wordlist by default.
 
-* A C++20-compatible compiler
-* CMake 3.20 or newer
-* OpenSSL Crypto
-* Boost 1.90 or newer with Program_options
+Optionally loads a 2,048-entry wordlist from a file.
 
-The project has been developed with Apple Clang on macOS. It should also build with sufficiently recent Clang or GCC installations.
+Uses OpenSSL RAND_priv_bytes() for default entropy.
 
-## Clone the Repository
+Supports mixed and reproducible dice entropy modes.
 
-The BIP submodule is optional. The program does not require it because the English wordlist is compiled into the executable.
+Supports mixed and reproducible shuffled-card entropy modes.
 
-```sh
+Derives and displays the BIP-39 seed on request.
+
+Reads passphrases interactively with terminal echo disabled.
+
+Displays entropy and checksum diagnostics on request.
+
+Prints each mnemonic word and its zero-based 11-bit wordlist index.
+
+Tests mnemonic, seed, dice, card, and validation behavior through CTest.
+
+Requirements
+
+A C++20-compatible compiler
+
+CMake 3.20 or newer
+
+OpenSSL Crypto
+
+Boost 1.90 or newer with Program_options
+
+POSIX terminal APIs for hidden passphrase entry
+
+The current CLI is developed on macOS and uses termios, unistd, and POSIXsignals. Windows requires a separate terminal-input implementation.
+
+Clone
+
 git clone https://github.com/Fudmottin/bip39.git
 cd bip39
-```
 
-To also obtain the BIP specifications and standard wordlists:
+The BIP submodule is optional. To initialize it:
 
-```sh
 git submodule update --init --recursive
-```
 
-Alternatively:
+Build
 
-```sh
-git clone --recurse-submodules https://github.com/Fudmottin/bip39.git
-cd bip39
-```
+macOS with Homebrew
 
-## Build
+brew install cmake ninja boost openssl@3
 
-### macOS with Homebrew
+Release build:
 
-Install the dependencies:
-
-```sh
-brew install cmake boost openssl@3
-```
-
-The provided script configures and builds a Release executable:
-
-```sh
 ./macos-build.sh
-```
 
 The executable is created at:
 
-```text
 build/seeds
-```
 
-The equivalent manual commands are:
+Debug build with tests:
 
-```sh
+./macos-debug-build.sh
+
+The Debug executables are:
+
+build/debug/seeds
+build/debug/tests/bip39_tests
+
+Equivalent Debug commands:
+
 cmake \
    -S . \
-   -B build \
-   -DCMAKE_BUILD_TYPE=Release \
+   -B build/debug \
+   -G Ninja \
+   -DCMAKE_BUILD_TYPE=Debug \
    -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
 
-cmake --build build
-```
+cmake --build build/debug
+ctest --test-dir build/debug --output-on-failure
 
-### Debian and Ubuntu
+Debian and Ubuntu
 
-The usual package names are:
-
-```sh
 sudo apt install \
    build-essential \
    cmake \
    libssl-dev \
    libboost-program-options-dev
-```
 
-The installed Boost package must provide Boost 1.90 or newer. Older distribution releases may require a newer Boost installation from another source.
+The installed Boost package must provide version 1.90 or newer.
 
-Configure and build:
-
-```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-```
 
-### Debug Build
+Disable test targets with:
 
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
-```
+cmake -S . -B build -DBUILD_TESTING=OFF
 
-## Usage
+Testing
 
-```text
+Run CTest:
+
+ctest --test-dir build/debug --output-on-failure
+
+Run the test executable directly to see successful checks:
+
+./build/debug/tests/bip39_tests
+
+Expected summary:
+
+24 BIP-39 English mnemonic and seed vectors passed
+BIP-39 input validation passed
+BIP-39 ASCII seed derivation passed
+Dice entropy derivation passed
+Card entropy derivation passed
+
+The tests use fixed inputs. They never wait for physical dice, shuffled cards,system randomness, or a passphrase.
+
+Usage
+
 seeds [options]
-```
 
-Options:
+Short
 
-| Short      | Long              | Meaning                                              |
-| ---------- | ----------------- | ---------------------------------------------------- |
-| `-h`       | `--help`          | Display help and exit                                |
-| `-w FILE`  | `--wordlist FILE` | Load a 2,048-entry wordlist from `FILE`              |
-| `-n COUNT` | `--words COUNT`   | Generate 12, 15, 18, 21, or 24 words                 |
-| `-d`       | `--dice`          | Interactively mix dice rolls with OpenSSL randomness |
-| `-e`       | `--show-entropy`  | Display the entropy and BIP-39 checksum              |
+Long
 
-Defaults:
+Meaning
 
-```text
-Wordlist:   compiled English BIP-39 wordlist
-Words:      12
-Dice mode:  disabled
-Diagnostics: disabled
-```
+-h
 
-No positional arguments are required or accepted.
+--help
 
-### Default 12-word mnemonic
+Display help and exit
 
-```sh
+-w FILE
+
+--wordlist FILE
+
+Load a 2,048-entry wordlist
+
+-n COUNT
+
+--words COUNT
+
+Generate 12, 15, 18, 21, or 24 words
+
+-d
+
+--dice
+
+Mix dice rolls with OpenSSL randomness
+
+
+
+--dice-only
+
+Hash ASCII dice rolls without system randomness
+
+
+
+--cards
+
+Mix one shuffled deck with OpenSSL randomness
+
+
+
+--cards-only
+
+Use shuffled deck orderings without system randomness
+
+-e
+
+--show-entropy
+
+Display entropy and checksum
+
+
+
+--show-seed
+
+Prompt for a passphrase and display the BIP-39 seed
+
+The four physical entropy-source options are mutually exclusive. With noneselected, the program uses OpenSSL system entropy.
+
+Examples:
+
 ./build/seeds
-```
-
-### Select another mnemonic length
-
-```sh
 ./build/seeds --words 24
-```
-
-Short form:
-
-```sh
-./build/seeds -n 24
-```
-
-Valid word counts are:
-
-```text
-12 15 18 21 24
-```
-
-### Use an external wordlist
-
-```sh
-./build/seeds --wordlist english-seeds.txt
-```
-
-Select both a wordlist and mnemonic length:
-
-```sh
-./build/seeds \
-   --wordlist path/to/wordlist.txt \
-   --words 24
-```
-
-### Display entropy diagnostics
-
-```sh
 ./build/seeds --show-entropy
-```
-
-This displays secret material equivalent to the mnemonic. It should not be used casually.
-
-### Display help
-
-```sh
-./build/seeds --help
-```
-
-## Entropy Sources
-
-### System Entropy
-
-Without `--dice`, the required entropy bytes are obtained directly from:
-
-```cpp
-RAND_priv_bytes()
-```
-
-The program reports the entropy path without displaying the random bytes:
-
-```text
-Entropy path: OpenSSL RAND_priv_bytes() <- OpenSSL private CSPRNG <- operating-system random generator
-```
-
-The program does not:
-
-* use `std::mt19937`;
-* use `std::random_device`;
-* scan or hash ordinary files;
-* open `/dev/random` directly;
-* substitute a weaker source if OpenSSL fails.
-
-Failure to obtain secure randomness causes the program to terminate with an error.
-
-OpenSSL abstracts the operating system's entropy collection. The program cannot determine whether the operating system internally used a hardware random-number generator or another particular physical source.
-
-### Interactive Dice Mode
-
-Enable dice mode with:
-
-```sh
-./build/seeds --dice
-```
-
-The program announces the required number of rolls and prompts for each result:
-
-```text
-Entropy path: SHA-256(dice rolls || RAND_priv_bytes())
-Dice mode requires 75 rolls for 128 bits of BIP-39 entropy.
-Enter each die result as a number from 1 through 6.
-
-Roll 1/75:
-```
-
-Enter one result from `1` through `6` at each prompt. Invalid input does not consume the roll; the same roll number is requested again.
-
-The number of rolls depends on the selected mnemonic length:
-
-| Words | BIP-39 entropy | Dice rolls |
-| ----: | -------------: | ---------: |
-|    12 |       128 bits |         75 |
-|    15 |       160 bits |         87 |
-|    18 |       192 bits |        100 |
-|    21 |       224 bits |        112 |
-|    24 |       256 bits |        124 |
-
-Assuming independent fair rolls, these counts provide approximately 64 more bits of nominal dice entropy than the requested BIP-39 entropy length.
-
-Dice mode constructs the input:
-
-```text
-"bip39-dice-v1"
-|| entropy-bit-count
-|| roll-count
-|| encoded-dice-rolls
-|| 32 bytes from RAND_priv_bytes()
-```
-
-The entropy-bit count and roll count are encoded as unsigned 16-bit big-endian values. Die faces `1` through `6` are encoded as values `0` through `5`.
-
-SHA-256 conditions the combined input:
-
-```text
-SHA-256(
-   domain separator
-   || entropy length
-   || roll count
-   || dice rolls
-   || OpenSSL private randomness
-)
-```
-
-The digest is truncated to the required BIP-39 entropy length. A 24-word mnemonic uses the complete 32-byte digest.
-
-The resulting entropy then follows the same BIP-39 checksum and word-selection path as system-generated entropy.
-
-Important consequences:
-
-* Dice mode always combines the rolls with OpenSSL randomness.
-* There is currently no dice-only mode.
-* The result cannot be reproduced later from the dice rolls alone.
-* Hashing conditions entropy but does not create entropy absent from its inputs.
-* Dice entries are echoed by the terminal and may remain in scrollback or recordings.
-* A compromised executable or operating system can still expose or replace the result.
-
-Example for a 24-word mnemonic:
-
-```sh
+./build/seeds --show-seed
 ./build/seeds --dice --words 24
-```
+./build/seeds --cards-only --words 21
 
-Dice mode may also be combined with an external wordlist or diagnostics:
+No positional arguments are accepted.
 
-```sh
-./build/seeds \
-   --dice \
-   --words 24 \
-   --wordlist path/to/wordlist.txt \
-   --show-entropy
-```
+Entropy Sources
 
-## Wordlists
+Every entropy source first produces 16, 20, 24, 28, or 32 bytes. Those bytesthen use the same BIP-39 checksum and word-selection code.
 
-The official English BIP-39 wordlist is compiled into the executable and is used when `--wordlist` is absent.
+System Entropy
 
-The repository also contains `english-seeds.txt`, which may be loaded explicitly for comparison:
+The default mode obtains the required bytes directly from:
 
-```sh
+RAND_priv_bytes()
+
+The program does not use std::mt19937, std::random_device, ordinary files,or /dev/random directly. Failure to obtain secure randomness terminates theprogram.
+
+Mixed Dice: --dice
+
+This mode combines physical rolls with 32 bytes from RAND_priv_bytes():
+
+SHA-256(
+   "bip39-dice-v1"
+   || entropy-bit-count
+   || roll-count
+   || zero-based dice values
+   || 32 OpenSSL random bytes
+)
+
+Words
+
+Entropy
+
+Rolls
+
+12
+
+128 bits
+
+75
+
+15
+
+160 bits
+
+87
+
+18
+
+192 bits
+
+100
+
+21
+
+224 bits
+
+112
+
+24
+
+256 bits
+
+124
+
+Enter one result from 1 through 6 at each prompt. Invalid input repeats thesame roll number. The result cannot be reproduced from the dice alone becauseOpenSSL randomness is included.
+
+Dice-Only Compatibility: --dice-only
+
+This mode hashes the exact ASCII roll characters:
+
+SHA-256(ASCII dice rolls)
+
+Words
+
+Entropy
+
+Rolls
+
+12
+
+128 bits
+
+50
+
+15
+
+160 bits
+
+62
+
+18
+
+192 bits
+
+75
+
+21
+
+224 bits
+
+87
+
+24
+
+256 bits
+
+99
+
+The 99-roll value is retained for compatibility with the documented COLDCARDand SeedSigner convention, although 99 fair rolls contain slightly less than256 bits of nominal entropy.
+
+No system randomness is mixed into this mode. Its security depends entirely onthe privacy, independence, fairness, and correct entry of the rolls.
+
+Mixed Cards: --cards
+
+This mode reads one shuffled 52-card deck and combines it with 32 OpenSSL randombytes:
+
+SHA-256(
+   "bip39-cards-v1"
+   || canonical deck ordering
+   || 32 OpenSSL random bytes
+)
+
+Cards-Only: --cards-only
+
+This mode uses:
+
+one shuffled deck for 12, 15, 18, or 21 words;
+
+two independently shuffled deck orderings for 24 words.
+
+For 24 words, the program asks the user to restore the deck to canonical order,perform a fresh shuffle, and enter the second ordering. The two submittedorderings must differ.
+
+No system randomness is mixed into cards-only mode.
+
+Card Entry
+
+Enter one card at a time from the top of the deck to the bottom:
+
+Shuffle 1, card 1/52: as
+Shuffle 1, card 2/52: 10d
+Shuffle 1, card 3/52: qh
+
+Ranks:
+
+a 2 3 4 5 6 7 8 9 10 j q k
+
+Suits:
+
+c d h s
+
+Examples:
+
+as   ace of spades
+10d  ten of diamonds
+qh   queen of hearts
+
+The letter t may replace 10, so td and 10d are equivalent. Input iscase-insensitive.
+
+The parser normalizes each card to a two-character form and rejects invalid orduplicate cards. An error repeats the same card position.
+
+The repository includes a parser smoke test:
+
+./cards-parser-test.sh
+
+It feeds an ordered, deliberately nonrandom deck to the Debug executable. It isonly a parser and control-flow test and must not be used to generate walletmaterial.
+
+Seed Derivation: --show-seed
+
+This option appends a BIP-39 derivation section after Tiny Seed.
+
+The program prompts:
+
+BIP-39 passphrase (empty for none):
+
+An empty entry means no passphrase. A nonempty passphrase must be entered twice.Terminal echo is disabled while the passphrase is read.
+
+Passphrase input requires an interactive POSIX terminal and cannot be pipedthrough standard input.
+
+Output resembles:
+
+    BIP-39 Derivation
+
+Mnemonic:   abandon ... about
+Passphrase: set (not displayed)
+Seed:       c55257c360c07c72...
+
+The seed is 64 bytes displayed as 128 lowercase hexadecimal characters. Thepassphrase itself is never printed.
+
+Seed derivation currently rejects non-ASCII mnemonic or passphrase input.
+
+If terminal echo remains disabled after an abnormal external failure:
+
+stty echo
+
+Wordlists
+
+The compiled official English wordlist is used unless --wordlist is supplied.
+
 ./build/seeds --wordlist english-seeds.txt
-```
 
 An external wordlist must contain:
 
-* exactly 2,048 lines;
-* one word per line;
-* no empty lines;
-* no duplicate words.
+exactly 2,048 lines;
 
-Both the words and their exact order are significant. Every position corresponds to one zero-based 11-bit index.
+one word per line;
 
-A custom wordlist preserves the underlying index construction, but it will not interoperate with ordinary BIP-39 wallets unless they use the identical words in the identical order.
+no empty lines;
 
-BIP-39 requires non-ASCII wordlists to use UTF-8 NFKD normalization. This program does not perform Unicode normalization. The compiled English wordlist is ASCII and is unaffected by this limitation.
+no duplicate words.
 
-Additional standard wordlists are available after initializing the submodule:
+Word content and ordering are significant. A custom wordlist will notinteroperate with standard wallets unless they use the identical list in theidentical order.
 
-```text
-external/bips/bip-0039/
-```
+BIP-39 requires non-ASCII wordlists to use UTF-8 NFKD normalization. Thisprogram does not perform Unicode normalization.
 
-## Output
+Output
 
-Normal output contains two sections.
+Normal output contains:
 
-### Seed Words
+Seed Words — the mnemonic words in order.
 
-The mnemonic words are printed in their original order:
+Tiny Seed — each word's zero-based 11-bit wordlist index.
 
-```text
-    Seed Words
+Tiny Seed uses _ for zero and █ for one:
 
-     1) document
-     2) exit
-     3) donate
-```
-
-### Tiny Seed
-
-Tiny Seed is this program's label for the zero-based 11-bit index of each mnemonic word:
-
-```text
-    Tiny Seed
-
-     1) _ █ _ _ _ _ _ _ _ █ █
-     2) _ █ _ _ █ █ █ █ █ █ █
-     3) _ █ _ _ _ _ _ █ _ _ _
-```
-
-An underscore represents zero. A solid block represents one.
-
-The indices are zero-based:
-
-```text
 wordlist[0]    = 00000000000
 wordlist[2047] = 11111111111
-```
 
-Do not add one to an index before recording or stamping it. A one-based value identifies a different word and cannot represent all 2,048 entries in 11 bits.
+Do not add one before recording or stamping an index. Tiny Seed represents thesame recovery secret as the mnemonic and requires the same protection.
 
-Tiny Seed is a physical representation of the same recovery secret as the mnemonic. It must receive the same protection.
+With --show-entropy, the program also displays entropy, checksum bits, entropylength, and checksum length. This output can recreate the mnemonic.
 
-### Entropy Diagnostics
+With --show-seed, the mnemonic sentence and 64-byte seed are appended afterTiny Seed.
 
-With `--show-entropy`, the program also displays:
+Errors
 
-```text
-    BIP-39 Internals
+Invalid command-line arguments, unsupported word counts, mutually exclusiveentropy modes, malformed wordlists, OpenSSL failures, incomplete input, invaliddice or card entries, duplicate cards, mismatched passphrases, and non-ASCIIseed-derivation input cause a nonzero exit status.
 
-Entropy:      7dd0aec8b6d75998d27f675baa27cf46475d2a8980dcd6cb3faa1fb5d081d872
-Checksum:     01010101
-Entropy bits: 256
-Checksum bits: 8
-```
+Security Considerations
 
-This can be useful for:
+Before using similar software with real wallet recovery material:
 
-* comparing output with BIP-39 test vectors;
-* verifying the SHA-256 checksum;
-* reconstructing the 11-bit indices;
-* studying mnemonic generation.
+review and test the implementation independently;
 
-The displayed entropy can recreate the mnemonic and must be protected just as carefully.
+compare results against official BIP-39 vectors;
 
-## Errors
+build from reviewed source;
 
-Invalid command-line arguments, unsupported word counts, malformed wordlists, OpenSSL failures, and incomplete dice input cause the program to print an error and terminate with a nonzero exit status.
+use a trusted and preferably offline computer;
 
-Examples of invalid invocations include:
+prevent terminal output from being logged or retained;
 
-```sh
-./build/seeds --words 13
-./build/seeds --words nonsense
-./build/seeds --unknown
-./build/seeds --wordlist
-```
+protect dice rolls and card orderings from observation;
 
-## Security Considerations
+verify external wordlists and their ordering;
 
-This project is intended to explain and demonstrate BIP-39 mnemonic generation.
+test wallet recovery before funding it;
 
-Before considering similar software for real wallet recovery material:
+securely erase temporary output where practical.
 
-* review and test the implementation independently;
-* compare it against official BIP-39 test vectors;
-* build it from reviewed source;
-* use a trusted and preferably offline computer;
-* prevent terminal output from being logged or retained;
-* verify any external wordlist and its ordering;
-* protect dice entries from observation;
-* securely erase temporary output where practical;
-* understand that entropy, mnemonic words, and Tiny Seed patterns represent equivalent recovery secrets.
+Hashing conditions entropy but does not create unpredictability absent from itsinputs. Physical-only modes are reproducible, but their security depends on thequality and secrecy of the physical process.
 
-Generating entropy safely does not protect it after generation. The operating system, terminal, display server, shell environment, copied text, storage, backups, and physical surroundings remain part of the trust boundary.
+The executable, operating system, terminal, display server, shell, storage,backups, camera view, and physical surroundings remain part of the trustboundary.
 
 No warranty is made that this software is suitable for securing funds.
 
-## License
+License
 
-This project is licensed under the GNU General Public License version 3. See [LICENSE](LICENSE) for details.
+This project is licensed under the GNU General Public License version 3. SeeLICENSE for details.
 
